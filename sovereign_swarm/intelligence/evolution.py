@@ -41,4 +41,17 @@ class EvolutionEngine:
             "fitness_trend": [round(f, 4) for f in self.fitness_history[-10:]]
         }
 
+    def speciate(self):
+        """Group agents into species by strategy name."""
+        species = defaultdict(list)
+        for p in self.population:
+            strat_name = p.get("strategy", "unknown")
+            if callable(strat_name):
+                strat_name = strat_name.__name__ if hasattr(strat_name, '__name__') else type(strat_name).__name__
+            species[strat_name].append(p)
+        return dict(species)
+
+
+
+
 
