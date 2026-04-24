@@ -13,7 +13,6 @@ class TestRunner:
     def check(self, name: str, condition: bool):
         if condition: self.passed += 1; print(f"  ✓ {name}")
         else: self.failed += 1; print(f"  ✗ {name}")
-
     async def run_unit(self):
         print("\n[UNIT TESTS]")
         bus = SwarmBus(DATA_DIR / "bus_unit.db"); await bus.init()
@@ -150,5 +149,11 @@ class TestRunner:
         print(f"\n{'='*50}")
         print(f"TOTAL: {self.passed} passed, {self.failed} failed")
         return self.failed == 0
+
+
+def run_cli():
+    import asyncio, sys
+    ok = asyncio.run(TestRunner().run_all())
+    raise SystemExit(0 if ok else 1)
 
 

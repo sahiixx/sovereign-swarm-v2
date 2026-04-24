@@ -79,7 +79,7 @@ class SwarmREPL:
         print(json.dumps(self.audit.report(), indent=2))
 
     async def cmd_alert_test(self):
-        result = await self.alert.send("Test alert from Sovereign Swarm v1.4", "info")
+        result = await self.alert.send("Test alert from Sovereign Swarm v2.0", "info")
         print(json.dumps(result, indent=2))
 
     async def cmd_kill(self):
@@ -113,16 +113,17 @@ class SwarmREPL:
             print(f"  {s.agent_id}: {result}")
 
     async def repl_loop(self):
-        print("\n🕸️  Sovereign Swarm v1.4 REPL — Monolithic Edition")
+        print("\n🕸️  Sovereign Swarm v2.0 REPL — Modular Multi-Agent OS")
         print("   Type 'help' for commands, 'exit' to quit.\n")
-        while self.running:
-            try:
-                line = input("swarm> ").strip()
-                if not line: continue
-                parts = line.split(); cmd = parts[0].lower(); args = parts[1:]
-                if cmd in ("exit", "quit"): break
-                elif cmd == "help":
-                    print("""
+        try:
+            while self.running:
+                try:
+                    line = input("swarm> ").strip()
+                    if not line: continue
+                    parts = line.split(); cmd = parts[0].lower(); args = parts[1:]
+                    if cmd in ("exit", "quit"): break
+                    elif cmd == "help":
+                        print("""
 Commands:
   spawn <name>          Spawn specialist agent
   hermes [status]       Universal protocol messenger
@@ -142,26 +143,28 @@ Commands:
   specialists           Run all 10 specialists once
   kill                  Arm kill switch
 """)
-                elif cmd == "spawn" and args: await self.cmd_spawn(args[0])
-                elif cmd == "hermes": await self.cmd_hermes(args[0] if args else "status")
-                elif cmd == "oc": await self.cmd_oc(args[0] if args else "status")
-                elif cmd == "ollama": await self.cmd_ollama(args[0] if args else "status")
-                elif cmd == "metrics": await self.cmd_metrics()
-                elif cmd == "mcp" and args and args[0] == "tools": await self.cmd_mcp_tools()
-                elif cmd == "memory" and len(args) >= 2 and args[0] == "search": await self.cmd_memory_search(" ".join(args[1:]))
-                elif cmd == "audit": await self.cmd_audit(args[0] if args else "today")
-                elif cmd == "alert" and args and args[0] == "test": await self.cmd_alert_test()
-                elif cmd == "platform": await self.cmd_platform()
-                elif cmd == "battery": await self.cmd_battery()
-                elif cmd == "thermal": await self.cmd_thermal()
-                elif cmd == "reputation": await self.cmd_reputation()
-                elif cmd == "economics": await self.cmd_economics()
-                elif cmd == "backup": await self.cmd_backup()
-                elif cmd == "specialists": await self.cmd_specialists()
-                elif cmd == "kill": await self.cmd_kill()
-                else: print(f"[!] Unknown command: {cmd}")
-            except EOFError: break
-            except Exception as e: print(f"[error] {e}")
+                    elif cmd == "spawn" and args: await self.cmd_spawn(args[0])
+                    elif cmd == "hermes": await self.cmd_hermes(args[0] if args else "status")
+                    elif cmd == "oc": await self.cmd_oc(args[0] if args else "status")
+                    elif cmd == "ollama": await self.cmd_ollama(args[0] if args else "status")
+                    elif cmd == "metrics": await self.cmd_metrics()
+                    elif cmd == "mcp" and args and args[0] == "tools": await self.cmd_mcp_tools()
+                    elif cmd == "memory" and len(args) >= 2 and args[0] == "search": await self.cmd_memory_search(" ".join(args[1:]))
+                    elif cmd == "audit": await self.cmd_audit(args[0] if args else "today")
+                    elif cmd == "alert" and args and args[0] == "test": await self.cmd_alert_test()
+                    elif cmd == "platform": await self.cmd_platform()
+                    elif cmd == "battery": await self.cmd_battery()
+                    elif cmd == "thermal": await self.cmd_thermal()
+                    elif cmd == "reputation": await self.cmd_reputation()
+                    elif cmd == "economics": await self.cmd_economics()
+                    elif cmd == "backup": await self.cmd_backup()
+                    elif cmd == "specialists": await self.cmd_specialists()
+                    elif cmd == "kill": await self.cmd_kill()
+                    else: print(f"[!] Unknown command: {cmd}")
+                except EOFError: break
+                except Exception as e: print(f"[error] {e}")
+        except KeyboardInterrupt:
+            print("\n[repl] Interrupted")
         print("\n[repl] Exited.")
 
     async def shutdown(self):

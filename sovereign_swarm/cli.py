@@ -4,7 +4,7 @@ from .tests import TestRunner
 
 
 async def main():
-    parser = argparse.ArgumentParser(description="Sovereign Swarm v1.4 — Monolithic Edition")
+    parser = argparse.ArgumentParser(description="Sovereign Swarm v2.0 — Modular Multi-Agent OS")
     parser.add_argument("--seed", action="store_true", help="Bootstrap database")
     parser.add_argument("--repl", action="store_true", help="Start REPL")
     parser.add_argument("--test", choices=["unit", "stress", "fuzz", "safety", "integration", "adversarial", "all"], help="Run test suite")
@@ -24,7 +24,8 @@ async def main():
 
     swarm = SwarmREPL()
     def handle_sig(sig, frame):
-        print("\n[signal] Shutdown requested."); asyncio.create_task(swarm.shutdown()); sys.exit(0)
+        print("\n[signal] Shutdown requested")
+        asyncio.get_event_loop().call_soon(asyncio.create_task, swarm.shutdown())
     signal.signal(signal.SIGINT, handle_sig)
 
     if args.seed: await swarm.seed()
