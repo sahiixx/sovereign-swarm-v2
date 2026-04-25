@@ -22,7 +22,16 @@ class SwarmREPL:
         self.backup = BackupManager(DATA_DIR)
         self.alert = AlertDispatcher()
         self.observe = ObservabilityLayer()
-        self.hermes = HermesMessenger()
+        self.hermes = HermesV2(safety=self.safety, audit=self.audit, bus=self.bus)
+        self.hermes_wiring = HermesWiring(
+            hermes=self.hermes,
+            meta=self.meta,
+            safety=self.safety,
+            audit=self.audit,
+            bus=self.bus,
+            llm=self.llm,
+            memory=self.memory,
+        )
         self.mcp = MCPServer()
         self.a2a = A2ACardServer()
         self.openclaw = OpenClawGateway()
@@ -39,10 +48,10 @@ class SwarmREPL:
         self.qwen3 = Qwen3Router()
 
     async def seed(self):
-        await self.bus.init(); await self.memory.init()
+        await self.bus.init(); await self.memory.init(); await self.hermes.start(); self.hermes_wiring.wire_all()
         for s in SpecialistFactory.SPECIALTIES:
             self.meta.register(AgentProfile(f"{s}_0", [s], trust=0.7))
-        print("[seed] Bus + Memory + Meta initialized. 10 specialist profiles registered.")
+        print("[seed] Bus + Memory + Meta + HermesV2 initialized. 10 specialist profiles registered.")
 
     async def cmd_spawn(self, name: str):
         agent_id = f"{name}_{len(self.agents)}"
@@ -52,8 +61,47 @@ class SwarmREPL:
         print(f"[spawn] Agent {agent_id} created.")
 
     async def cmd_hermes(self, sub: str = "status"):
-        if sub == "status": print(json.dumps(self.hermes.status(), indent=2))
-        else: print(f"[hermes] Protocol messenger: {sub}")
+        if sub == "status":
+            print(json.dumps(self.hermes.status(), indent=2))
+        elif sub == "report":
+            print(json.dumps(self.hermes.report(), indent=2))
+        elif sub == "audit":
+            print(json.dumps(self.hermes.audit_trail(20), indent=2))
+        elif sub == "wire":
+            self.hermes_wiring.wire_all()
+            print(json.dumps(self.hermes_wiring.report(), indent=2))
+        elif sub == "send":
+            # Usage: hermes send <channel> <json_payload>
+            print("[hermes] Usage: hermes send <channel> '{...json...}'")
+        else:
+            print(f"[hermes] Unknown subcommand: {sub}")
+
+    async def cmd_hermes_send(self, channel: str, payload_str: str):
+        try:
+            payload = json.loads(payload_str)
+            result = await self.hermes.send(channel, payload)
+            print(json.dumps(result, indent=2))
+        except Exception as e:
+            print(f"[hermes send error] {e}")
+
+    async def cmd_fixfizx(self, sub: str = "status"):
+        result = await self.hermes.send("fixfizx", {"action": sub})
+        print(json.dumps(result, indent=2))
+
+    async def cmd_moltworker(self, sub: str = "status"):
+        if sub == "send":
+            print("[moltworker] Usage: moltworker send '<message>'")
+            return
+        result = await self.hermes.send("moltworker", {"action": sub})
+        print(json.dumps(result, indent=2))
+
+    async def cmd_moltworker_send(self, message: str):
+        result = await self.hermes.send("moltworker", {"action": "send", "message": message, "target": "default"})
+        print(json.dumps(result, indent=2))
+
+    async def cmd_broadcast(self, message: str):
+        result = await self.hermes.broadcast({"event": "broadcast", "message": message})
+        print(json.dumps(result, indent=2))
 
     async def cmd_oc(self, sub: str = "status"):
         if sub == "status": print(json.dumps(self.openclaw.report(), indent=2))
@@ -125,26 +173,46 @@ class SwarmREPL:
                     elif cmd == "help":
                         print("""
 Commands:
-  spawn <name>          Spawn specialist agent
-  hermes [status]       Universal protocol messenger
-  oc [status]           OpenClaw gateway
-  ollama [status]       Ollama lifecycle
-  metrics               Swarm metrics + observability
-  mcp tools             List 12 MCP tools
-  memory search <q>     Semantic memory search
-  audit [today]         Audit trail
-  alert test            Test alert channels
-  platform              Detect platform + recommend model
-  battery               Battery status + mode
-  thermal               Thermal status + tier
-  reputation            Agent reputation scores
-  economics             Cost predictions + ROI
-  backup                Create backup snapshot
-  specialists           Run all 10 specialists once
-  kill                  Arm kill switch
+  spawn <name>            Spawn specialist agent
+  hermes [status]         Universal protocol messenger
+  hermes report           Full Hermes wiring report
+  hermes audit            Last 20 messages on bus
+  hermes wire             Re-wire all components
+  hermes send <ch> <j>    Send JSON payload to channel
+  fixfizx [status]        Fixfizx bridge status
+  fixfizx health          Fixfizx healthcheck
+  moltworker [status]     Moltworker bridge status
+  moltworker send <msg>   Send message via moltworker
+  broadcast <msg>         Broadcast to all channels
+  oc [status]             OpenClaw gateway
+  ollama [status]         Ollama lifecycle
+  metrics                 Swarm metrics + observability
+  mcp tools               List 12 MCP tools
+  memory search <q>       Semantic memory search
+  audit [today]           Audit trail
+  alert test              Test alert channels
+  platform                Detect platform + recommend model
+  battery                 Battery status + mode
+  thermal                 Thermal status + tier
+  reputation              Agent reputation scores
+  economics               Cost predictions + ROI
+  backup                  Create backup snapshot
+  specialists             Run all 10 specialists once
+  kill                    Arm kill switch
 """)
                     elif cmd == "spawn" and args: await self.cmd_spawn(args[0])
-                    elif cmd == "hermes": await self.cmd_hermes(args[0] if args else "status")
+                    elif cmd == "hermes":
+                        if len(args) >= 3 and args[0] == "send":
+                            await self.cmd_hermes_send(args[1], " ".join(args[2:]))
+                        else:
+                            await self.cmd_hermes(args[0] if args else "status")
+                    elif cmd == "fixfizx": await self.cmd_fixfizx(args[0] if args else "status")
+                    elif cmd == "moltworker":
+                        if len(args) >= 2 and args[0] == "send":
+                            await self.cmd_moltworker_send(" ".join(args[1:]))
+                        else:
+                            await self.cmd_moltworker(args[0] if args else "status")
+                    elif cmd == "broadcast" and args: await self.cmd_broadcast(" ".join(args))
                     elif cmd == "oc": await self.cmd_oc(args[0] if args else "status")
                     elif cmd == "ollama": await self.cmd_ollama(args[0] if args else "status")
                     elif cmd == "metrics": await self.cmd_metrics()
@@ -168,6 +236,7 @@ Commands:
         print("\n[repl] Exited.")
 
     async def shutdown(self):
+        await self.hermes.stop()
         await self.bus.close(); await self.memory.close()
 
 

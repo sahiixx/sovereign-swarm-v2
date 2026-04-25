@@ -111,6 +111,50 @@ class TestRunner:
         self.check("protocol_imports", True)  # All classes already imported
         await bus.close(); await mem.close()
 
+    async def run_hermes(self):
+        print("\n[HERMES V2 TESTS]")
+        hermes = HermesV2(safety=SafetyCouncil(), audit=AuditTrail(DATA_DIR))
+        await hermes.start()
+        self.check("hermes_starts", hermes._running)
+
+        # Safety gate
+        result = await hermes.send("internal", {"action": "test", "payload": "rm -rf /"})
+        self.check("hermes_safety_blocks", result.get("error", "").startswith("SAFETY_BLOCKED"))
+
+        # Safe message passes (safety doesn't block it)
+        result = await hermes.send("internal", {"action": "audit.query", "limit": 5})
+        self.check("hermes_safe_passes", not str(result.get("error", "")).startswith("SAFETY_BLOCKED"))
+
+        # Channel unknown
+        result = await hermes.send("foo", {"a": 1})
+        self.check("hermes_unknown_channel", "Unknown channel" in str(result.get("error", "")))
+
+        # Broadcast
+        result = await hermes.broadcast({"event": "test"}, channels=["internal", "webhook"])
+        self.check("hermes_broadcast", result.get("broadcast") is True)
+        self.check("hermes_broadcast_2_channels", len(result.get("results", {})) == 2)
+
+        # Auto-route
+        result = await hermes.auto_route("lead.qualified", {"lead_id": "L1", "tier": "A"})
+        routed = result.get("results", {})
+        self.check("hermes_auto_route", "fixfizx" in routed and "moltworker" in routed)
+
+        # Audit trail records
+        trail = hermes.audit_trail(50)
+        self.check("hermes_audit_trail", len(trail) >= 2)
+
+        # Stats
+        stats = hermes.status().get("stats", {})
+        self.check("hermes_stats_tracked", "internal" in stats and "sent" in stats.get("internal", {}))
+
+        # Wire all channels
+        wiring = HermesWiring(hermes)
+        wiring.wire_all()
+        report = wiring.report()
+        self.check("hermes_wiring", len(report.get("wired_channels", [])) >= 12)
+
+        await hermes.stop()
+
     async def run_adversarial(self):
         print("\n[ADVERSARIAL TESTS]")
         safety = SafetyCouncil()
@@ -145,7 +189,8 @@ class TestRunner:
 
     async def run_all(self):
         await self.run_unit(); await self.run_stress(); await self.run_fuzz()
-        await self.run_safety(); await self.run_integration(); await self.run_adversarial()
+        await self.run_safety(); await self.run_integration(); await self.run_hermes()
+        await self.run_adversarial()
         print(f"\n{'='*50}")
         print(f"TOTAL: {self.passed} passed, {self.failed} failed")
         return self.failed == 0
