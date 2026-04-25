@@ -1,0 +1,42 @@
+# Sovereign Swarm v2.0 — Production Compose
+# Wire all ecosystem services through Hermes V2
+version: "3.9"
+
+services:
+  swarm:
+    build: .
+    image: sovereign-swarm:v2
+    container_name: sovereign-swarm
+    ports:
+      - "18789:18789"   # OpenClaw gateway
+      - "18793:18793"   # Webhook server
+      - "18797:18797"   # A2A SSE server
+    environment:
+      - SWARM_DATA_DIR=/app/data
+      # External services (configure per env)
+      - NOWHERE_AI_URL=${NOWHERE_AI_URL:-http://fixfizx:8001}
+      - NOWHERE_AI_JWT=${NOWHERE_AI_JWT:-}
+      - MOLTBOT_GATEWAY_URL=${MOLTBOT_GATEWAY_URL:-http://moltworker:8787}
+      - MOLTBOT_GATEWAY_TOKEN=${MOLTBOT_GATEWAY_TOKEN:-}
+      - N8N_BASE_URL=${N8N_BASE_URL:-http://n8n:5678}
+      - N8N_API_KEY=${N8N_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - OPENCLAW_GATEWAY_TOKEN=${OPENCLAW_GATEWAY_TOKEN:-}
+    volumes:
+      - swarm_data:/app/data
+    restart: unless-stopped
+    networks:
+      - hermes-bus
+
+  # Optional: Redis for external pub/sub (future)
+  # redis:
+  #   image: redis:7-alpine
+  #   networks:
+  #     - hermes-bus
+
+networks:
+  hermes-bus:
+    driver: bridge
+
+volumes:
+  swarm_data:

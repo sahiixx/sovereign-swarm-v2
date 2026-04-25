@@ -153,6 +153,20 @@ class TestRunner:
         report = wiring.report()
         self.check("hermes_wiring", len(report.get("wired_channels", [])) >= 12)
 
+        # Fixfizx client report
+        fclient = FixfizxClient()
+        self.check("fixfizx_client_report", "base_url" in fclient.report())
+        mclient = MoltworkerClient()
+        self.check("moltworker_client_report", "gateway_url" in mclient.report())
+
+        # Agency bridge
+        abridge = AgencyBridge(hermes)
+        self.check("agency_bridge_connected", abridge.report().get("connected") is True)
+
+        # Webhook server (no aiohttp in stdlib, just instantiation)
+        wserver = WebhookServer(hermes=hermes)
+        self.check("webhook_server_created", wserver.port == 18793)
+
         await hermes.stop()
 
     async def run_adversarial(self):

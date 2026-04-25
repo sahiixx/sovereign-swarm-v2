@@ -23,6 +23,8 @@ class SwarmREPL:
         self.alert = AlertDispatcher()
         self.observe = ObservabilityLayer()
         self.hermes = HermesV2(safety=self.safety, audit=self.audit, bus=self.bus)
+        fixfizx_client = FixfizxClient()
+        moltworker_client = MoltworkerClient()
         self.hermes_wiring = HermesWiring(
             hermes=self.hermes,
             meta=self.meta,
@@ -31,7 +33,13 @@ class SwarmREPL:
             bus=self.bus,
             llm=self.llm,
             memory=self.memory,
+            mcp=MCPServer(),
+            a2a=A2ACardServer(),
+            openclaw=OpenClawGateway(),
         )
+        self.hermes_wiring.register_fixfizx_client(fixfizx_client)
+        self.hermes_wiring.register_moltworker_client(moltworker_client)
+        self.agency_bridge = AgencyBridge(self.hermes)
         self.mcp = MCPServer()
         self.a2a = A2ACardServer()
         self.openclaw = OpenClawGateway()
