@@ -105,7 +105,14 @@ class HermesWiring:
 
     async def _a2a_handler(self, payload: Dict) -> Dict:
         if self.a2a:
-            return await self.a2a._rpc_handler(AioWeb.Request(json=payload))
+            try:
+                # If aiohttp installed, create a simple Request mock
+                class _MockRequest:
+                    def __init__(self, json_body): self._body = json_body
+                    async def json(self): return self._body
+                return await self.a2a._rpc_handler(_MockRequest(payload))
+            except Exception as e:
+                return {"channel": "a2a", "error": str(e)}
         return {"channel": "a2a", "received": True}
 
     async def _openclaw_handler(self, payload: Dict) -> Dict:

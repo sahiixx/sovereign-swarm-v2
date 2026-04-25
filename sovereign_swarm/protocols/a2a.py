@@ -41,7 +41,7 @@ class A2ACardServer:
             while True:
                 msg = await asyncio.wait_for(queue.get(), timeout=30.0)
                 data = json.dumps(msg)
-                resp.write(f"data: {data}\n\n".encode())
+                await resp.write(f"data: {data}\n\n".encode())
                 await resp.drain()
         except asyncio.TimeoutError:
             pass
