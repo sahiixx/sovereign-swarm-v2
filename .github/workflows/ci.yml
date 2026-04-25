@@ -23,4 +23,4 @@ jobs:
           import sys
           from sovereign_swarm.tests import TestRunner
           ok = asyncio.run(TestRunner().run_all())
-          sys.exit(0 if ok else 1)
+          sys.exit(0 if ok else 1)"

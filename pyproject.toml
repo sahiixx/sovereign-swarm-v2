@@ -3,7 +3,10 @@ name = "sovereign-swarm"
 version = "2.4.0"
 description = "Sovereign Swarm — Modular Multi-Agent OS"
 requires-python = ">=3.10"
-dependencies = []
+dependencies = [
+    "sahiixx-bus>=0.1.0",
+    "httpx>=0.27",
+]
 
 [project.optional-dependencies]
 all = ["aiohttp>=3.8", "pydantic>=2.0", "prometheus-client>=0.20"]

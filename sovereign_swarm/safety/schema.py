@@ -1,5 +1,10 @@
 from ..config import *
 
+try:
+    from pydantic import Field
+except Exception:
+    Field = None
+
 class ToolSchema:
     def __init__(self):
         self.schemas = self._build_schemas(); self.validation_failures: Dict[str, int] = {}; self.circuit_threshold = 5; self.circuit_open: set = set()
