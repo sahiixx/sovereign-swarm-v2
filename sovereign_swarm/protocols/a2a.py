@@ -2,7 +2,7 @@ from ..config import *
 import asyncio
 
 class A2ACardServer:
-    def __init__(self, port: int = 18797):
+    def __init__(self, port: int = 18797, host: str = "127.0.0.1"):
         self.port = port; self.agents: Dict[str, Dict] = {}; self.app = AioWeb.Application() if AioWeb else None
         self._sse_queues: List[asyncio.Queue] = []
         if self.app:
@@ -71,7 +71,7 @@ class A2ACardServer:
     async def start(self):
         if self.app:
             runner = AioWeb.AppRunner(self.app); await runner.setup()
-            site = AioWeb.TCPSite(runner, "0.0.0.0", self.port); await site.start()
+            site = AioWeb.TCPSite(runner, self.host, self.port); await site.start()
             print(f"[a2a] Agent card + SSE server on :{self.port}"); return runner
         return None
 

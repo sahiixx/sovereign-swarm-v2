@@ -22,14 +22,23 @@ class SwarmBus:
         for cb in self._subs.get(topic, []):
             try:
                 if asyncio.iscoroutinefunction(cb):
-                    asyncio.create_task(cb(payload))
+                    task = asyncio.create_task(cb(payload))
+                    task.add_done_callback(self._on_callback_done)
                 else:
                     cb(payload)
             except Exception:
-                pass
+                logger.exception("Bus callback error")
+
+    @staticmethod
+    def _on_callback_done(task: asyncio.Task):
+        if task.cancelled():
+            return
+        if exc := task.exception():
+            logger.exception("Bus async callback error: %s", exc)
 
     async def subscribe(self, topic: str, callback: Callable):
-        self._subs.setdefault(topic, []).append(callback)
+        async with self._lock:
+            self._subs.setdefault(topic, []).append(callback)
 
     async def history(self, topic: str, limit: int = 100) -> List[dict]:
         async with self._lock:

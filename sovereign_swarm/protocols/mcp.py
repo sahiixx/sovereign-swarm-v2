@@ -19,15 +19,25 @@ class MCPServer:
             return {"tool": tool, "result": result, "status": "ok"}
         except Exception as e: return {"tool": tool, "error": str(e), "status": "error"}
 
+    MAX_MESSAGE_SIZE = 1_048_576  # 1MB
+
     async def stdio_loop(self):
         while True:
             try:
                 line = await asyncio.get_event_loop().run_in_executor(None, sys.stdin.readline)
-                if not line: break
-                req = json.loads(line); resp = await self.handle(req)
-                sys.stdout.write(json.dumps(resp) + "\n"); sys.stdout.flush()
+                if not line:
+                    break
+                if len(line) > self.MAX_MESSAGE_SIZE:
+                    sys.stdout.write(json.dumps({"error": "message_too_large"}) + "\n")
+                    sys.stdout.flush()
+                    continue
+                req = json.loads(line)
+                resp = await self.handle(req)
+                sys.stdout.write(json.dumps(resp) + "\n")
+                sys.stdout.flush()
             except Exception as e:
-                sys.stdout.write(json.dumps({"error": str(e)}) + "\n"); sys.stdout.flush()
+                sys.stdout.write(json.dumps({"error": str(e)}) + "\n")
+                sys.stdout.flush()
 
     def schema(self, tool: str) -> Dict:
         schemas = {

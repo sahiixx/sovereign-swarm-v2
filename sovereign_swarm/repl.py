@@ -52,7 +52,6 @@ class SwarmREPL:
         self.evo = EvolutionEngine()
         self.schema = ToolSchema()
         self.budget = BudgetController()
-        self.costctl = CostController()
         self.qwen3 = Qwen3Router()
 
     async def seed(self):

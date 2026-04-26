@@ -1,34 +1,50 @@
 from ..config import *
 
 class LLMClient:
-    def __init__(self):
+    def __init__(self, session: Optional[Any] = None):
         self.ollama_host = os.getenv("OLLAMA_HOST", "http://localhost:11434")
         self.openai_key = os.getenv("OPENAI_API_KEY", "")
         self.default_model = os.getenv("OLLAMA_MODEL", "qwen3:4b")
+        self._session = session
+
+    def _get_session(self):
+        if self._session:
+            return self._session, False
+        if aiohttp:
+            return aiohttp.ClientSession(), True
+        return None, False
 
     async def healthcheck(self) -> str:
         if not aiohttp:
             return "aiohttp not installed"
+        session, owned = self._get_session()
+        if not session:
+            return "aiohttp not installed"
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(f"{self.ollama_host}/api/tags", timeout=aiohttp.ClientTimeout(total=5)) as resp:
-                    return "healthy" if resp.status == 200 else f"status:{resp.status}"
+            async with session.get(f"{self.ollama_host}/api/tags", timeout=aiohttp.ClientTimeout(total=5)) as resp:
+                return "healthy" if resp.status == 200 else f"status:{resp.status}"
         except Exception as e:
             return f"unreachable ({str(e)[:50]})"
+        finally:
+            if owned:
+                await session.close()
 
     async def chat(self, prompt: str, model: Optional[str] = None) -> Dict[str, Any]:
         model = model or self.default_model
         if not aiohttp:
             return {"error": "aiohttp missing", "response": ""}
+        session, owned = self._get_session()
+        if not session:
+            return {"error": "aiohttp missing", "response": ""}
         try:
-            async with aiohttp.ClientSession() as session:
-                payload = {"model": model, "messages": [{"role": "user", "content": prompt}], "stream": False}
-                async with session.post(f"{self.ollama_host}/api/chat", json=payload, timeout=aiohttp.ClientTimeout(total=60)) as resp:
-                    if resp.status == 200:
-                        data = await resp.json()
-                        return {"response": data.get("message", {}).get("content", ""), "model": model}
-                    return {"error": f"HTTP {resp.status}", "response": ""}
+            payload = {"model": model, "messages": [{"role": "user", "content": prompt}], "stream": False}
+            async with session.post(f"{self.ollama_host}/api/chat", json=payload, timeout=aiohttp.ClientTimeout(total=60)) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    return {"response": data.get("message", {}).get("content", ""), "model": model}
+                return {"error": f"HTTP {resp.status}", "response": ""}
         except Exception as e:
             return {"error": str(e), "response": ""}
-
-
+        finally:
+            if owned:
+                await session.close()
