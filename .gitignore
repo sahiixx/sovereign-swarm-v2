@@ -19,6 +19,9 @@ uv.lock
 .build-venv/
 data/
 mobile/node_modules/
+**/node_modules/
 __pycache__/
+**/__pycache__/
+*.pyc
 .venv/
-*.pyc 2
+.venv* 2
