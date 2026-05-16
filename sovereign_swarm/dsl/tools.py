@@ -22,7 +22,7 @@ class ToolRegistry:
             "validation.diff": self.validation_diff,
         }
 
-    async def execute(self, tool: str, params: Dict[str, Any], timeout: int = 60) -> str:
+    async def execute(self, tool: str, params: Dict[str, Any], timeout: int = 600) -> str:
         handler = self._tools.get(tool)
         if not handler:
             return json.dumps({"error": f"Unknown tool: {tool}", "available": list(self._tools.keys())})
@@ -59,7 +59,7 @@ class ToolRegistry:
             # Use DuckDuckGo HTML scraper (no API key needed)
             url = f"https://html.duckduckgo.com/html/?q={urllib.parse.quote(query)}"
             req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-            with urllib.request.urlopen(req, timeout=10) as resp:
+            with urllib.request.urlopen(req, timeout=30) as resp:
                 html = resp.read().decode("utf-8", errors="replace")
             # Extract result snippets
             import re
@@ -72,7 +72,7 @@ class ToolRegistry:
         url = params.get("url", "")
         try:
             req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-            with urllib.request.urlopen(req, timeout=15) as resp:
+            with urllib.request.urlopen(req, timeout=60) as resp:
                 data = resp.read().decode("utf-8", errors="replace")
             return data[:50_000]
         except Exception as e:

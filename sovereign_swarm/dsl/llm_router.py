@@ -66,7 +66,7 @@ class _OllamaLiteProvider:
             method="POST",
         )
         try:
-            with urllib.request.urlopen(req, timeout=120) as resp:
+            with urllib.request.urlopen(req, timeout=600) as resp:
                 data = _json.loads(resp.read().decode("utf-8"))
             output = data.get("response", "").strip()
             if not output:
@@ -101,7 +101,7 @@ class _KimiLiteProvider:
             # Try kimi CLI first
             proc = subprocess.run(
                 ["kimi", "-m", model, "--no-stream", prompt],
-                capture_output=True, text=True, timeout=120,
+                capture_output=True, text=True, timeout=600,
             )
             if proc.returncode == 0:
                 return ProviderResult(output=proc.stdout.strip(), provider=self.name, model=model)
@@ -129,7 +129,7 @@ class _KimiLiteProvider:
             method="POST",
         )
         try:
-            with urllib.request.urlopen(req, timeout=60) as resp:
+            with urllib.request.urlopen(req, timeout=600) as resp:
                 data = _json.loads(resp.read().decode("utf-8"))
             out = data["choices"][0]["message"]["content"]
             return ProviderResult(output=out.strip(), provider=self.name, model=model)
