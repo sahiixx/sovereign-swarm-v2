@@ -82,7 +82,8 @@ class _OllamaLiteProvider:
 class LLMProviderRouter:
     """Routes LLM/agent calls to available backends."""
 
-    def __init__(self, default_provider: str = "kimi", fallback_provider: str = "ollama"):
+    def __init__(self, default_provider: str = "ollama", fallback_provider: str = "kimi"): 
+        """Ollama primary (local, no limits). Kimi secondary (cloud)."""
         self.default = default_provider
         self.fallback = fallback_provider
         self._providers: Dict[str, Any] = {}
