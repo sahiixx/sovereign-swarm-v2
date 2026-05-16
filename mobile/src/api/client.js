@@ -1,4 +1,4 @@
-const API_BASE = "http://YOUR_PC_IP:18800"; // change to your machine IP
+const API_BASE = "http://localhost:18800"; // change to your machine IP
 
 async function post(path, body) {
   const res = await fetch(`${API_BASE}${path}`, {

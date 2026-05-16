@@ -74,8 +74,15 @@ class Handler(BaseHTTPRequestHandler):
                 "status": store.get("status", "unknown")
             })
         elif self.path.startswith("/api/v1/missions"):
-            ids = list(_missions_store.keys())
-            self._json({"ok": True, "missions": ids})
+            limit = 20
+            try:
+                from urllib.parse import parse_qs, urlparse
+                qs = parse_qs(urlparse(self.path).query)
+                limit = int(qs.get("limit", [20])[0])
+            except Exception:
+                pass
+            recent = sorted(_missions_store.items(), key=lambda x: x[1].get("timestamp", 0), reverse=True)[:limit]
+            self._json({"ok": True, "missions": [m[1] for m in recent], "count": len(_missions_store)})
         else:
             self._json({"ok": False, "error": f"Unknown path {self.path}"}, 404)
 
@@ -90,28 +97,57 @@ class Handler(BaseHTTPRequestHandler):
 
         if self.path == "/api/v1/mission":
             goal = payload.get("goal", "")
+            user_id = payload.get("user_id", "api_user")
             if not goal:
                 return self._json({"ok": False, "error": "Missing goal"}, 400)
 
-            # Run in background thread to avoid blocking HTTP
-            def run():
+            def _run_async():
                 try:
-                    result = _mission_loop.run(goal)
-                    _missions_store[result.checkpoint_id or "unknown"] = result.to_dict()
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    result = loop.run_until_complete(_mission_loop.run(goal, requester_id=user_id))
+                    rid = result.checkpoint_id or result.data.get("mission_id") or f"mission_{int(time.time())}"
+                    _missions_store[rid] = result.to_dict()
                     store = StorableDict(_DATA_DIR / "status.json")
-                    store["last_mission"] = result.checkpoint_id
+                    store["last_mission"] = rid
                     store.save()
                 except Exception as exc:
-                    _missions_store[f"error_{int(time.time())}"] = {"ok": False, "error": str(exc)}
+                    import traceback as _tb
+                    _missions_store[f"error_{int(time.time())}"] = {"ok": False, "error": str(exc), "traceback": _tb.format_exc()}
 
-            t = threading.Thread(target=run, daemon=True)
+            t = threading.Thread(target=_run_async, daemon=True)
             t.start()
             self._json({
                 "ok": True,
                 "status": "accepted",
                 "goal": goal,
-                "message": "Mission running in background. Check /api/v1/status for updates."
+                "message": "Mission running. Check /api/v1/missions for result."
             })
+
+        elif self.path == "/api/v1/chat":
+            message = payload.get("message", "")
+            user_id = payload.get("user_id", "chat_user")
+            if not message:
+                return self._json({"ok": False, "error": "Missing message"}, 400)
+
+            def _chat_async():
+                try:
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    result = loop.run_until_complete(_mission_loop.run(message, requester_id=user_id))
+                    rid = result.checkpoint_id or result.data.get("mission_id") or f"chat_{int(time.time())}"
+                    _missions_store[rid] = result.to_dict()
+                except Exception as exc:
+                    _missions_store[f"chat_error_{int(time.time())}"] = {"ok": False, "error": str(exc)}
+
+            t = threading.Thread(target=_chat_async, daemon=True)
+            t.start()
+            self._json({
+                "ok": True,
+                "status": "accepted",
+                "message": message,
+            })
+
         else:
             self._json({"ok": False, "error": f"Unknown path {self.path}"}, 404)
 
@@ -149,6 +185,34 @@ def main():
     finally:
         _server.server_close()
         print("[DSL Daemon] Shut down.")
+
+
+class DSLDaemon:
+    """Async-friendly daemon wrapper for CLI integration."""
+
+    def __init__(self, port: int = 18800):
+        self.port = port
+        self._thread: Optional[threading.Thread] = None
+        self._running = False
+
+    async def start(self):
+        self._thread = threading.Thread(target=main, daemon=True)
+        self._thread.start()
+        self._running = True
+        # Wait for server to bind
+        import socket
+        for _ in range(30):
+            try:
+                with socket.create_connection(("localhost", self.port), timeout=1):
+                    break
+            except Exception:
+                await asyncio.sleep(0.5)
+
+    async def stop(self):
+        _shutdown_event.set()
+        if _server:
+            _server.shutdown()
+        self._running = False
 
 
 if __name__ == "__main__":

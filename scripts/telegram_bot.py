@@ -17,6 +17,16 @@ from socketserver import ThreadingMixIn
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger(__name__)
 
+# Load secrets from .hermes/secrets.env if TOKEN not in environment
+if not os.getenv("TELEGRAM_BOT_TOKEN"):
+    secrets_path = os.path.join(os.path.expanduser("~"), ".hermes", "secrets.env")
+    if os.path.exists(secrets_path):
+        with open(secrets_path) as f:
+            for line in f:
+                if line.strip().startswith("TELEGRAM_BOT_TOKEN="):
+                    os.environ["TELEGRAM_BOT_TOKEN"] = line.strip().split("=", 1)[1]
+                    break
+
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_API = f"https://api.telegram.org/bot{TOKEN}"
 N8N_WEBHOOK = "http://127.0.0.1:5678/webhook/dsl-mission"
