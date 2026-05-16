@@ -43,7 +43,7 @@ class _OllamaLiteProvider:
         system_prompt: str,
         query: str,
         agent_name: str = "ollama-agent",
-        model: str = "qwen2.5-coder:3b",
+        model: str = "kimi-k2.6:cloud",
         base_url: str = "http://localhost:11434",
         **kwargs,
     ) -> ProviderResult:
@@ -96,13 +96,8 @@ class LLMProviderRouter:
         except Exception as e:
             self._providers["kimi"] = None
 
-        # Ollama provider
-        try:
-            from providers.ollama_provider import OllamaProvider
-            self._providers["ollama"] = OllamaProvider()
-        except Exception:
-            # Fall back to lightweight stdlib HTTP backend
-            self._providers["ollama"] = _OllamaLiteProvider()
+        # Ollama provider — lightweight stdlib HTTP backend (fast, no langchain deps)
+        self._providers["ollama"] = _OllamaLiteProvider()
 
         # OpenAI provider
         try:
@@ -147,7 +142,7 @@ class LLMProviderRouter:
                     lambda: backend.run_agent(
                         system_prompt=system_prompt or "You are a helpful assistant.",
                         query=prompt,
-                        model=kwargs.pop("model", "qwen2.5-coder:3b"),
+                        model=kwargs.pop("model", "kimi-k2.6:cloud"),
                         **kwargs
                     )
                 )

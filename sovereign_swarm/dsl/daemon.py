@@ -50,7 +50,8 @@ _shutdown_event = threading.Event()
 
 
 class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
-    demon_threads = True
+    daemon_threads = True
+    allow_reuse_address = True
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -136,6 +137,7 @@ def main():
 
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 18800
     _server = ThreadedHTTPServer(("0.0.0.0", port), Handler)
+    _server.allow_reuse_address = True
     print(f"[DSL Daemon] Running on port {port}")
     print(f"[DSL Daemon] POST http://localhost:{port}/api/v1/mission")
 
