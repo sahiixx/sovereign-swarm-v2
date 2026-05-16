@@ -162,16 +162,19 @@ def _signal_handler(signum, frame):
         _server.shutdown()
 
 
-def main():
+def _run_server(port: int = 18800):
+    """Start the HTTP server. Can be called from main thread or background thread."""
     global _mission_loop, _server
 
-    signal.signal(signal.SIGINT, _signal_handler)
-    signal.signal(signal.SIGTERM, _signal_handler)
+    # Signal handlers only work in the main thread
+    if threading.current_thread() is threading.main_thread():
+        signal.signal(signal.SIGINT, _signal_handler)
+        signal.signal(signal.SIGTERM, _signal_handler)
 
-    # Init loop (asyncio not needed for sync run)
-    _mission_loop = DeterministicSovereignLoop()
+    # Init loop
+    if _mission_loop is None:
+        _mission_loop = DeterministicSovereignLoop()
 
-    port = int(sys.argv[1]) if len(sys.argv) > 1 else 18800
     _server = ThreadedHTTPServer(("0.0.0.0", port), Handler)
     _server.allow_reuse_address = True
     print(f"[DSL Daemon] Running on port {port}")
@@ -187,6 +190,11 @@ def main():
         print("[DSL Daemon] Shut down.")
 
 
+def main():
+    port = int(sys.argv[1]) if len(sys.argv) > 1 else 18800
+    _run_server(port)
+
+
 class DSLDaemon:
     """Async-friendly daemon wrapper for CLI integration."""
 
@@ -196,7 +204,7 @@ class DSLDaemon:
         self._running = False
 
     async def start(self):
-        self._thread = threading.Thread(target=main, daemon=True)
+        self._thread = threading.Thread(target=lambda: _run_server(self.port), daemon=True)
         self._thread.start()
         self._running = True
         # Wait for server to bind

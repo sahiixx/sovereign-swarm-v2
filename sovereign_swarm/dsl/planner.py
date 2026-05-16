@@ -16,7 +16,7 @@ class Step:
     id: str
     tool: str
     params: dict
-    timeout: int = 30
+    timeout: int = 600
     retries: int = 0
     deps: tuple[str, ...] = ()
     description: str = ""
@@ -85,7 +85,7 @@ class PlanDAG:
 class Planner:
     """Simple rule-based planner.  Replace with LLM for complex domains."""
 
-    DEFAULT_TIMEOUT = 30
+    DEFAULT_TIMEOUT = 600
 
     def __init__(self, step_timeout: int = None):
         self.step_timeout = step_timeout or self.DEFAULT_TIMEOUT
@@ -116,7 +116,7 @@ class Planner:
             # Build a Step: heuristic tool assignment
             tool, params = self._heuristic_tool(part, mission)
             # Generative steps need more time than file ops
-            timeout = 120 if tool == "llm.generate" else self.step_timeout
+            timeout = 600 if tool == "llm.generate" else self.step_timeout
             s = Step(
                 id=step_id,
                 tool=tool,
