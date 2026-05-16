@@ -92,7 +92,10 @@ class _KimiLiteProvider:
         model: str = "kimi-k2.6",
         **kwargs,
     ) -> ProviderResult:
+        import json as _json
         import subprocess
+        import urllib.request
+
         prompt = f"{system_prompt}\n\n{query}".strip()
         try:
             # Try kimi CLI first
@@ -102,17 +105,34 @@ class _KimiLiteProvider:
             )
             if proc.returncode == 0:
                 return ProviderResult(output=proc.stdout.strip(), provider=self.name, model=model)
-            # Fallback to subprocess of python script if kimi CLI not found
-            proc2 = subprocess.run(
-                [sys.executable, "-c",
-                 f"import urllib.request,json; req=urllib.request.Request('https://api.moonshot.cn/v1/chat/completions', data=json.dumps({{'model':'{model}','messages':[{{'role':'system','content':{repr(system_prompt)}},{{'role':'user','content':{repr(query)}}}]}}).encode(), headers={{'Content-Type':'application/json','Authorization':'Bearer '+os.environ.get('KIMI_API_KEY','')}}); print(urllib.request.urlopen(req,timeout=60).read().decode())"],
-                capture_output=True, text=True, timeout=120,
-            )
-            if proc2.returncode == 0:
-                data = json.loads(proc2.stdout)
-                out = data["choices"][0]["message"]["content"]
-                return ProviderResult(output=out.strip(), provider=self.name, model=model)
-            return ProviderResult(output="", provider=self.name, model=model, error=f"Kimi CLI failed: {proc.stderr}")
+        except Exception:
+            pass
+
+        # Fallback to direct HTTP API call
+        api_key = os.environ.get("KIMI_API_KEY", "")
+        if not api_key:
+            return ProviderResult(output="", provider=self.name, model=model, error="Kimi CLI not found and KIMI_API_KEY not set")
+
+        url = "https://api.moonshot.cn/v1/chat/completions"
+        payload = _json.dumps({
+            "model": model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": query},
+            ],
+            "temperature": kwargs.get("temperature", 0.7),
+        }).encode("utf-8")
+        req = urllib.request.Request(
+            url,
+            data=payload,
+            headers={"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"},
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                data = _json.loads(resp.read().decode("utf-8"))
+            out = data["choices"][0]["message"]["content"]
+            return ProviderResult(output=out.strip(), provider=self.name, model=model)
         except Exception as e:
             return ProviderResult(output="", provider=self.name, model=model, error=f"{type(e).__name__}: {e}")
 
