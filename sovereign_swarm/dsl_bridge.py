@@ -8,14 +8,14 @@ import asyncio, os
 from pathlib import Path
 from typing import Optional, Callable
 
-from .dsl import DeterministicSovereignLoop, LazyConsensusGate, CapabilitySandbox
-from .dsl.budget import BudgetEnforcer
-from .dsl.checkpoint import CheckpointManager
+from sovereign_swarm.dsl import DeterministicSovereignLoop, LazyConsensusGate, CapabilitySandbox
+from sovereign_swarm.dsl.budget import BudgetEnforcer
+from sovereign_swarm.dsl.checkpoint import CheckpointManager
 
-from .infra.bus import SwarmBus
-from .safety.budget import BudgetController
-from .safety.council import SafetyCouncil
-from .intelligence.orchestrator import MetaOrchestrator
+from sovereign_swarm.infra.bus import SwarmBus
+from sovereign_swarm.safety.budget import BudgetController
+from sovereign_swarm.safety.council import SafetyCouncil
+from sovereign_swarm.intelligence.orchestrator import MetaOrchestrator
 
 
 class DSLBridge:

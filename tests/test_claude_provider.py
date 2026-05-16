@@ -16,7 +16,7 @@ class MockResponse:
 
 class TestClaudeProvider(unittest.TestCase):
     def _run(self, coro):
-        return asyncio.get_event_loop().run_until_complete(coro)
+        return asyncio.run(coro)
 
     @patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test_key"}, clear=False)
     def test_detects_anthropic(self):
