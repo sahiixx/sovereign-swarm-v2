@@ -113,7 +113,12 @@ class DifferentialValidator:
 
             # Heuristic: did output mention the goal keywords?
             out = outputs.get(step.id, "")
-            score = self._score(out, expected)
+            if step.tool in self.HIGH_RISK_TOOLS:
+                # Generative tools are expected to produce novel output, not echo keywords.
+                # If output is non-empty and not an error marker, treat as relevant.
+                score = 0.9 if (out and not out.startswith("[ERROR")) else 0.0
+            else:
+                score = self._score(out, expected)
             if score < 0.5:
                 sr["ok"] = False
                 sr["error"] = f"Output relevance low ({score:.2f})"

@@ -33,6 +33,52 @@ except Exception:
     pass
 
 
+class _OllamaLiteProvider:
+    """Lightweight stdlib-only Ollama backend (no langchain required)."""
+
+    name = "ollama-lite"
+
+    def run_agent(
+        self,
+        system_prompt: str,
+        query: str,
+        agent_name: str = "ollama-agent",
+        model: str = "qwen2.5-coder:3b",
+        base_url: str = "http://localhost:11434",
+        **kwargs,
+    ) -> ProviderResult:
+        import json as _json
+        import urllib.request
+        url = f"{base_url.rstrip('/')}/api/generate"
+        payload = _json.dumps(
+            {
+                "model": model,
+                "prompt": query,
+                "system": system_prompt,
+                "stream": False,
+                "options": {"temperature": kwargs.get("temperature", 0.7)},
+            }
+        ).encode("utf-8")
+        req = urllib.request.Request(
+            url,
+            data=payload,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=120) as resp:
+                data = _json.loads(resp.read().decode("utf-8"))
+            output = data.get("response", "").strip()
+            if not output:
+                output = data.get("message", {}).get("content", "").strip()
+            return ProviderResult(output=output, provider=self.name, model=model)
+        except Exception as e:
+            return ProviderResult(
+                output="", provider=self.name, model=model,
+                error=f"{type(e).__name__}: {e}",
+            )
+
+
 class LLMProviderRouter:
     """Routes LLM/agent calls to available backends."""
 
@@ -54,8 +100,9 @@ class LLMProviderRouter:
         try:
             from providers.ollama_provider import OllamaProvider
             self._providers["ollama"] = OllamaProvider()
-        except Exception as e:
-            self._providers["ollama"] = None
+        except Exception:
+            # Fall back to lightweight stdlib HTTP backend
+            self._providers["ollama"] = _OllamaLiteProvider()
 
         # OpenAI provider
         try:
@@ -100,6 +147,7 @@ class LLMProviderRouter:
                     lambda: backend.run_agent(
                         system_prompt=system_prompt or "You are a helpful assistant.",
                         query=prompt,
+                        model=kwargs.pop("model", "qwen2.5-coder:3b"),
                         **kwargs
                     )
                 )

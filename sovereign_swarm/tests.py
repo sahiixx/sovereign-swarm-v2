@@ -234,7 +234,13 @@ class TestRunner:
         from .dsl.planner import Planner, Step, PlanDAG
         from .dsl.validator import DifferentialValidator
 
-        loop = DeterministicSovereignLoop()
+        from .dsl.llm_router import LLMProviderRouter
+
+        class _StubLLM(LLMProviderRouter):
+            async def generate(self, prompt, system_prompt="", provider=None, **kwargs):
+                return f"Completed task: {prompt}\nStatus: success\nOutput generated for {prompt[:60]}..."
+
+        loop = DeterministicSovereignLoop(llm_router=_StubLLM())
         result = await loop.run("write a fastapi auth service", requester_id="test_dsl")
         self.check("dsl_complete", result.ok and result.state == "COMPLETE")
         self.check("dsl_has_checkpoints", result.checkpoint_id is not None)

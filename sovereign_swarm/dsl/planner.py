@@ -115,12 +115,14 @@ class Planner:
             prev = tuple(s.id for s in steps if i == len(steps))
             # Build a Step: heuristic tool assignment
             tool, params = self._heuristic_tool(part, mission)
+            # Generative steps need more time than file ops
+            timeout = 120 if tool == "llm.generate" else self.step_timeout
             s = Step(
                 id=step_id,
                 tool=tool,
                 params=params,
-                timeout=self.step_timeout,
-                deps=tuple(),  # Sequential: each depends on the previous  
+                timeout=timeout,
+                deps=tuple(),  # Sequential: each depends on the previous
                 description=part[:200],
             )
             # Update deps after creation (since frozen, we recast)
