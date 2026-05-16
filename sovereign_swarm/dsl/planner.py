@@ -140,11 +140,29 @@ class Planner:
         return dag
 
     def _heuristic_tool(self, text: str, mission: Mission) -> tuple[str, dict]:
+        import re, os
         lower = text.lower()
+
         if lower.startswith("read "):
             return ("file.read", {"path": text.split(maxsplit=1)[1]})
+
         if lower.startswith("write ") or lower.startswith("save "):
-            return ("file.write", {"content": text})
+            rest = text.split(maxsplit=1)[1] if " " in text else ""
+            # If the next token looks like a file path (contains /, \, or common extensions),
+            # treat as file.write; otherwise it's a generative request for the LLM.
+            first_token = rest.split(maxsplit=1)[0] if rest else ""
+            path_like = bool(re.search(r"[./\\]|\.[a-zA-Z0-9]{1,10}$", first_token))
+            if path_like:
+                # Split into path and content if a space follows the path
+                m = re.match(r"(\S+)\s+(.*)", rest)
+                if m:
+                    path, content = m.groups()
+                else:
+                    path, content = rest, ""
+                return ("file.write", {"path": path, "content": content})
+            # Generative fallback
+            return ("llm.generate", {"prompt": text, "domain": mission.domain})
+
         if lower.startswith("search ") or lower.startswith("find "):
             return ("web.search", {"query": text})
         if lower.startswith("run ") or lower.startswith("execute "):

@@ -10,7 +10,24 @@ async def main():
     parser.add_argument("--test", choices=["unit", "stress", "fuzz", "safety", "integration", "adversarial", "dsl", "all"], help="Run test suite")
     parser.add_argument("--dsl", action="store_true", help="Run DeterministicSovereignLoop")
     parser.add_argument("--run-mission", type=str, default=None, help="Pass a mission goal to the DSL")
+    parser.add_argument("--daemon", action="store_true", help="Start DSL daemon with Hermes bus")
+    parser.add_argument("--mobile-bridge", action="store_true", help="Start mobile REST API bridge")
     args = parser.parse_args()
+
+    if args.daemon:
+        from .dsl.daemon import DSLDaemon
+        daemon = DSLDaemon()
+        def handle_sig(signum, frame):
+            asyncio.create_task(daemon.stop())
+        signal.signal(signal.SIGINT, handle_sig)
+        signal.signal(signal.SIGTERM, handle_sig)
+        await daemon.start()
+        sys.exit(0)
+
+    if args.mobile_bridge:
+        from api.mobile_bridge import main as mobile_main
+        mobile_main()
+        sys.exit(0)
 
     if args.dsl or args.run_mission:
         from .dsl import DeterministicSovereignLoop

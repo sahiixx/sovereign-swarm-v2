@@ -4,7 +4,9 @@ Produces a ValidationReport with pass/fail, confidence, and risk so
 that the governance layer can decide whether a patch is needed.
 """
 
+import sys
 import time
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from .mission import Mission
@@ -21,6 +23,7 @@ class ValidationReport:
         step_results: List[Dict],
         patch: str = "",
         target_checkpoints: List[str] = None,
+        analysis_artifacts: Dict = None,
     ):
         self.passed = passed
         self.confidence = confidence
@@ -29,6 +32,7 @@ class ValidationReport:
         self.step_results = step_results
         self.patch = patch
         self.target_checkpoints = target_checkpoints or []
+        self.analysis_artifacts = analysis_artifacts or {}
 
     def to_dict(self) -> dict:
         return {
@@ -39,6 +43,7 @@ class ValidationReport:
             "step_results": self.step_results,
             "patch": self.patch[:4096],
             "target_checkpoints": self.target_checkpoints,
+            "analysis_artifacts": self.analysis_artifacts,
         }
 
     def to_proposal(self, requested_by: str = "validator") -> dict:
@@ -49,17 +54,41 @@ class ValidationReport:
             "risk_score": self.risk_score,
             "reason": "Validation gap detected — patch required to close capability gap",
             "requested_by": requested_by,
+            "artifacts": self.analysis_artifacts,
         }
 
 
 class DifferentialValidator:
-    """Validates DAG output with differential tests + confidence scoring."""
+    """Validates DAG output with differential tests + confidence scoring.
+
+    For reverse engineering missions, bridges to OMNI's Ghidra/Frida
+    integration to produce real static/dynamic analysis artifacts.
+    """
 
     HIGH_RISK_TOOLS = {"llm.generate", "code.execute", "synthesize", "self.modify"}
     CONFIDENCE_DECAY = 0.05
 
     def __init__(self):
         self._baseline: Dict[str, Any] = {}
+        self._omni: Optional[Any] = None
+        self._omni_path: str = ""
+
+    def _init_omni(self):
+        """Lazy init of OMNI integration — import only when needed."""
+        if self._omni is not None:
+            return
+        try:
+            sys.path.insert(0, "/home/sahiix/workspace")
+            from omni_integration import GhidraMCPClient, StaticAnalyzer, FridaActuator
+            self._omni = {
+                "ghidra": GhidraMCPClient(),
+                "static": StaticAnalyzer(),
+                "frida": FridaActuator(),
+            }
+            self._omni_path = "/home/sahiix/workspace/omni_integration.py"
+        except Exception as exc:
+            self._omni = None
+            self._omni_path = str(exc)
 
     async def diff_test(self, dag: PlanDAG, expected: str, outputs: Dict[str, str] = None) -> ValidationReport:
         outputs = outputs or {}
@@ -95,6 +124,24 @@ class DifferentialValidator:
         overall_pass = confidence >= 0.7 and risk <= 0.5 and len(gaps) == 0
         has_gap = len(gaps) > 0
 
+        # ── OMNI bridge: reverse engineering ──
+        artifacts = {}
+        if expected.lower().startswith(("reverse", "analyze", "decompile", "disassemble", "re")) and self._omni is None:
+            self._init_omni()
+        if self._omni:
+            binary_path = next((outputs.get(s.id) for s in dag.topological_order() if s.tool in ("file.read", "web.fetch")), None)
+            if binary_path and Path(binary_path).is_file():
+                try:
+                    static = self._omni["static"]
+                    artifact = await static.analyze(binary_path)
+                    artifacts["static"] = artifact.to_dict() if hasattr(artifact, "to_dict") else artifact
+                    confidence = min(confidence, 0.99)
+                    has_gap = False
+                except Exception as exc:
+                    artifacts["static_error"] = str(exc)
+            else:
+                artifacts["static_skip"] = "No binary file found in step outputs"
+
         patch = ""
         if has_gap:
             patch = f"# Patch for gap steps: {gaps}\n# Regenerate with stronger prompt constraints\n"
@@ -106,6 +153,7 @@ class DifferentialValidator:
             has_gap=has_gap,
             step_results=step_results,
             patch=patch,
+            analysis_artifacts=artifacts,
         )
 
     def _score(self, output: str, expected: str) -> float:

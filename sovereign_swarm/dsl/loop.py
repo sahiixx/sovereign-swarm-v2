@@ -18,6 +18,8 @@ from .checkpoint import CheckpointManager
 from .budget import BudgetEnforcer
 from .governance import LazyConsensusGate, Approval
 from .sandbox import CapabilitySandbox
+from .llm_router import LLMProviderRouter
+from .tools import ToolRegistry
 
 
 class DeterministicSovereignLoop:
@@ -34,6 +36,7 @@ class DeterministicSovereignLoop:
         planner: Planner = None,
         validator: DifferentialValidator = None,
         intent_parser: IntentParser = None,
+        llm_router: LLMProviderRouter = None,
         bus=None,
         on_state_change: Optional[Callable[[str, str, dict], None]] = None,
     ):
@@ -44,6 +47,8 @@ class DeterministicSovereignLoop:
         self.governor = governor or LazyConsensusGate(bus=bus)
         self.budget = budget or BudgetEnforcer()
         self.sandbox = sandbox or CapabilitySandbox()
+        self.llm = llm_router or LLMProviderRouter()
+        self.tools = ToolRegistry(self.llm)
         self.bus = bus
         self.on_state_change = on_state_change
 
@@ -193,45 +198,8 @@ class DeterministicSovereignLoop:
         return mission
 
     async def _execute_step(self, step, mission: Mission) -> str:
-        """Dispatch a single step through the sandbox."""
-        if step.tool.startswith("file."):
-            return await self._exec_file(step)
-        elif step.tool == "sandbox.run":
-            return await self._exec_sandbox(step)
-        elif step.tool == "llm.generate":
-            return await self._exec_llm(step)
-        elif step.tool in ("validation.diff",):
-            return await self._exec_validate(step)
-        else:
-            # Generic passthrough
-            return json.dumps({"tool": step.tool, "params": step.params, "status": "unimplemented"})
-
-    async def _exec_file(self, step) -> str:
-        """Read or write files inside the sandbox."""
-        path = step.params.get("path", "")
-        content = step.params.get("content", "")
-        if "write" in step.tool:
-            code = f"open({path!r}, 'w').write({content!r})\n"
-            res = await self.sandbox.run(code, timeout=step.timeout)
-            return res["stdout"] if res["ok"] else res["stderr"]
-        else:
-            code = f"print(open({path!r}, 'r').read())\n"
-            res = await self.sandbox.run(code, timeout=step.timeout)
-            return res["stdout"] if res["ok"] else res["stderr"]
-
-    async def _exec_sandbox(self, step) -> str:
-        cmd = step.params.get("command", "echo 'no-op'")
-        code = f"import subprocess, sys\nsys.exit(subprocess.call({cmd!r}, shell=True))\n"
-        res = await self.sandbox.run(code, timeout=step.timeout)
-        return res["stdout"] if res["ok"] else res["stderr"]
-
-    async def _exec_llm(self, step) -> str:
-        """Hook for LLM calls — not implemented here; returns stub."""
-        return f"[LLM_STUB: {step.params.get('prompt', '')[:60]}...]"
-
-    async def _exec_validate(self, step) -> str:
-        target = step.params.get("target", "")
-        return f"[VALIDATE_STUB: {target}]"
+        """Dispatch a single step through the tool registry."""
+        return await self.tools.execute(step.tool, step.params, timeout=step.timeout)
 
     def _emit(self, mission_id: str, state: str, meta: dict):
         payload = {**meta, "mission_id": mission_id, "state": state, "ts": time.time()}

@@ -28,6 +28,8 @@ from .planner import Planner, PlanDAG, Step
 from .validator import DifferentialValidator, ValidationReport
 from .intent import IntentParser
 from .loop import DeterministicSovereignLoop
+from .llm_router import LLMProviderRouter
+from .tools import ToolRegistry
 
 __all__ = [
     "Mission",
@@ -49,4 +51,6 @@ __all__ = [
     "ValidationReport",
     "IntentParser",
     "DeterministicSovereignLoop",
+    "LLMProviderRouter",
+    "ToolRegistry",
 ]
