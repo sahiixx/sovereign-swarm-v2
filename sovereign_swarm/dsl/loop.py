@@ -20,6 +20,8 @@ from .governance import LazyConsensusGate, Approval
 from .sandbox import CapabilitySandbox
 from .llm_router import LLMProviderRouter
 from .tools import ToolRegistry
+from ..infra.memory import SwarmMemory
+from ..config import DATA_DIR
 
 
 class DeterministicSovereignLoop:
@@ -39,6 +41,7 @@ class DeterministicSovereignLoop:
         llm_router: LLMProviderRouter = None,
         bus=None,
         on_state_change: Optional[Callable[[str, str, dict], None]] = None,
+        memory: SwarmMemory = None,
     ):
         self.checkpoint = CheckpointManager(checkpoint_db)
         self.intent = intent_parser or IntentParser()
@@ -51,11 +54,25 @@ class DeterministicSovereignLoop:
         self.tools = ToolRegistry(self.llm)
         self.bus = bus
         self.on_state_change = on_state_change
+        self.memory = memory
 
     async def run(self, raw_goal: str, requester_id: str = "default") -> Result:
         """Run the six-state DSL from a raw goal string."""
         mission_id = f"dsl:{requester_id}:{time.time():.6f}"
         meta = {"start": time.time(), "requester": requester_id}
+
+        # Lazy-init memory
+        if self.memory is None:
+            self.memory = SwarmMemory(DATA_DIR / "dsl_memory.db")
+            await self.memory.init()
+
+        # Retrieve prior context for multi-turn continuity
+        try:
+            prior = await self.memory.search(requester_id, limit=5)
+            if prior:
+                meta["prior_context"] = [p["value"] for p in prior]
+        except Exception:
+            pass
 
         try:
             # ── 1. INTENT ──
@@ -163,15 +180,25 @@ class DeterministicSovereignLoop:
             elapsed = time.time() - meta["start"]
             self.checkpoint.save("complete", {"elapsed_sec": elapsed}, mission_id)
             self.budget.reset(mission_id)
+            result_data = {
+                "mission_id": mission_id,
+                "mission": mission.to_dict(),
+                "dag": dag.to_dict(),
+                "outputs": step_outputs,
+                "validation": validation.to_dict(),
+                "checkpoints": [s.id for s in self.checkpoint.history(mission_id)],
+            }
+            # Persist result for multi-turn continuity
+            try:
+                await self.memory.store(
+                    requester_id,
+                    {"goal": raw_goal, "outputs": step_outputs, "elapsed": elapsed, "mission_id": mission_id},
+                    tags=f"dsl,complete,{requester_id}",
+                )
+            except Exception:
+                pass
             return Result.success(
-                data={
-                    "mission_id": mission_id,
-                    "mission": mission.to_dict(),
-                    "dag": dag.to_dict(),
-                    "outputs": step_outputs,
-                    "validation": validation.to_dict(),
-                    "checkpoints": [s.id for s in self.checkpoint.history(mission_id)],
-                },
+                data=result_data,
                 state="COMPLETE",
                 checkpoint_id=self.checkpoint.last_id(mission_id),
                 elapsed=elapsed,

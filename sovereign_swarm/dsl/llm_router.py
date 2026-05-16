@@ -79,6 +79,87 @@ class _OllamaLiteProvider:
             )
 
 
+class _KimiLiteProvider:
+    """Lightweight Kimi CLI backend (no SDK required)."""
+
+    name = "kimi-lite"
+
+    def run_agent(
+        self,
+        system_prompt: str,
+        query: str,
+        agent_name: str = "kimi-agent",
+        model: str = "kimi-k2.6",
+        **kwargs,
+    ) -> ProviderResult:
+        import subprocess
+        prompt = f"{system_prompt}\n\n{query}".strip()
+        try:
+            # Try kimi CLI first
+            proc = subprocess.run(
+                ["kimi", "-m", model, "--no-stream", prompt],
+                capture_output=True, text=True, timeout=120,
+            )
+            if proc.returncode == 0:
+                return ProviderResult(output=proc.stdout.strip(), provider=self.name, model=model)
+            # Fallback to subprocess of python script if kimi CLI not found
+            proc2 = subprocess.run(
+                [sys.executable, "-c",
+                 f"import urllib.request,json; req=urllib.request.Request('https://api.moonshot.cn/v1/chat/completions', data=json.dumps({{'model':'{model}','messages':[{{'role':'system','content':{repr(system_prompt)}},{{'role':'user','content':{repr(query)}}}]}}).encode(), headers={{'Content-Type':'application/json','Authorization':'Bearer '+os.environ.get('KIMI_API_KEY','')}}); print(urllib.request.urlopen(req,timeout=60).read().decode())"],
+                capture_output=True, text=True, timeout=120,
+            )
+            if proc2.returncode == 0:
+                data = json.loads(proc2.stdout)
+                out = data["choices"][0]["message"]["content"]
+                return ProviderResult(output=out.strip(), provider=self.name, model=model)
+            return ProviderResult(output="", provider=self.name, model=model, error=f"Kimi CLI failed: {proc.stderr}")
+        except Exception as e:
+            return ProviderResult(output="", provider=self.name, model=model, error=f"{type(e).__name__}: {e}")
+
+
+class _OpenAILiteProvider:
+    """Lightweight OpenAI API backend (urllib only, no openai SDK)."""
+
+    name = "openai-lite"
+
+    def run_agent(
+        self,
+        system_prompt: str,
+        query: str,
+        agent_name: str = "openai-agent",
+        model: str = "gpt-4o-mini",
+        base_url: str = "https://api.openai.com/v1",
+        **kwargs,
+    ) -> ProviderResult:
+        import json as _json
+        import urllib.request
+        api_key = os.environ.get("OPENAI_API_KEY", "")
+        if not api_key:
+            return ProviderResult(output="", provider=self.name, model=model, error="OPENAI_API_KEY not set")
+        url = f"{base_url.rstrip('/')}/chat/completions"
+        payload = _json.dumps({
+            "model": model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": query},
+            ],
+            "temperature": kwargs.get("temperature", 0.7),
+        }).encode("utf-8")
+        req = urllib.request.Request(
+            url,
+            data=payload,
+            headers={"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"},
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                data = _json.loads(resp.read().decode("utf-8"))
+            out = data["choices"][0]["message"]["content"]
+            return ProviderResult(output=out.strip(), provider=self.name, model=model)
+        except Exception as e:
+            return ProviderResult(output="", provider=self.name, model=model, error=f"{type(e).__name__}: {e}")
+
+
 class LLMProviderRouter:
     """Routes LLM/agent calls to available backends."""
 
@@ -90,22 +171,22 @@ class LLMProviderRouter:
         self._init_providers()
 
     def _init_providers(self):
-        # Kimi provider
+        # Kimi provider — try full agency-agents SDK first, then lite fallback
         try:
             from providers.kimi_provider import KimiProvider
             self._providers["kimi"] = KimiProvider()
-        except Exception as e:
-            self._providers["kimi"] = None
+        except Exception:
+            self._providers["kimi"] = _KimiLiteProvider()
 
         # Ollama provider — lightweight stdlib HTTP backend (fast, no langchain deps)
         self._providers["ollama"] = _OllamaLiteProvider()
 
-        # OpenAI provider
+        # OpenAI provider — try full SDK first, then lite fallback
         try:
             from providers.openai_provider import OpenAIProvider
             self._providers["openai"] = OpenAIProvider()
         except Exception:
-            self._providers["openai"] = None
+            self._providers["openai"] = _OpenAILiteProvider()
 
     async def generate(self, prompt: str, system_prompt: str = "", provider: str = None, **kwargs) -> str:
         """Generate text via the specified or default provider."""
