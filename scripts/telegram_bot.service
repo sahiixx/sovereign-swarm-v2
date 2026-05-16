@@ -1,0 +1,18 @@
+[Unit]
+Description=Dubai RE Telegram Bot
+After=network.target n8n-lite.service hermes-dsl.service
+
+[Service]
+Type=simple
+User=sahiix
+WorkingDirectory=/home/sahiix/sovereign-swarm-v2
+ExecStart=/home/sahiix/sovereign-swarm-v2/venv/bin/python3 scripts/telegram_bot.py
+Restart=always
+RestartSec=5
+Environment=PYTHONPATH=/home/sahiix/sovereign-swarm-v2
+EnvironmentFile=/home/sahiix/.hermes/master-backup-pre-merge-20260515_154610/.env
+Environment=TELEGRAM_BOT_PORT=18802
+Environment=OLLAMA_HOST=127.0.0.1:11434
+
+[Install]
+WantedBy=multi-user.target

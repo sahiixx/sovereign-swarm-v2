@@ -1,83 +1,94 @@
-# Sovereign Swarm v2
-
-Modular Multi-Agent OS — swarm intelligence, safety councils, economic engines, and protocol bridges. 45 modules across 6 functional domains.
-
-[![CI](https://github.com/sahiixx/sovereign-swarm-v2/actions/workflows/ci.yml/badge.svg)](https://github.com/sahiixx/sovereign-swarm-v2/actions)
-[![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://python.org)
-[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+# Sovereign Swarm v2 — Dubai RE Deployment Guide
 
 ## Architecture
 
 ```
-sovereign_swarm/
-├── agents/          # Agent profiles, spawning, HITL, scheduling
-├── infra/           # Event bus, memory, LLM client, platform detection
-├── intelligence/    # Orchestration, routing, reputation, healing, evolution
-├── protocols/       # MCP server, A2A cards, Hermes messenger, OpenClaw gateway
-├── safety/          # Safety council, audit, budget, observe, alerts
-├── cli.py           # CLI entrypoint (--seed, --repl, --test)
-├── repl.py          # Interactive REPL with 15+ commands
-├── tests.py         # 33 tests across 6 suites
-└── config.py        # Shared config, optional deps
+┌─────────────────────────────────────────────────────────────────┐
+│                        User Telegram                             │
+└──────────────────────┬────────────────────────────────────────┘
+                       │ POST / (webhook)
+                       ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                  Telegram Bot  (port 18802)                      │
+│   /start, /find, /dsl, /status                                   │
+│   routes /dsl → n8n-lite → DSL daemon                          │
+└┬─────────────────────┬───────────────────────────────────────────┘
+ │                     │
+ │ /find or /dsl       │ health
+ │                     ▼
+ ▼           ┌─────────────────────┐
+POST         │   n8n-lite          │  (port 5678)
+/webhook/    │   webhook engine    │
+dsl-mission  │   /webhook/dsl-mission
+             │   /webhook/telegram │
+             └────────┬────────────┘
+                      │ POST
+                      ▼
+            ┌─────────────────────┐
+            │   DSL Daemon          │  (port 18800)
+            │   Deterministic       │
+            │   Sovereign Loop      │
+            │   /api/v1/mission     │
+            │   /api/v1/status      │
+            └─────────────────────┘
 ```
 
-## Install
+## Ports
+
+| Service        | Port  | Endpoints                         |
+|----------------|-------|-----------------------------------|
+| DSL Daemon     | 18800 | /api/v1/mission, /api/v1/status |
+| n8n-lite       | 5678  | /webhook/dsl-mission, /webhook/telegram, /health, /workflows |
+| Telegram Bot   | 18802 | / (webhook), /health, /status     |
+
+## Systemd Services
+
+- `n8n-lite.service`        → runs `scripts/n8n-lite.py` on port 5678, auto-restart
+- `telegram-bot.service`    → runs `scripts/telegram_bot.py` on port 18802, after n8n-lite
+- DSL daemon is started by deploy script (`python -m sovereign_swarm.dsl.daemon`)
+
+## Commands
 
 ```bash
-git clone https://github.com/sahiixx/sovereign-swarm-v2.git
-cd sovereign-swarm-v2
-pip install .          # core only
-pip install ".[all]"   # aiohttp + pydantic + prometheus
+# Start all services
+sudo systemctl start n8n-lite telegram-bot
+
+# Enable on boot
+sudo systemctl enable n8n-lite telegram-bot
+
+# Check logs
+sudo journalctl -u n8n-lite -f
+sudo journalctl -u telegram-bot -f
+
+# Health check
+python3 scripts/health-check.py
+
+# Full deploy (git pull, pip install, restart, health check)
+./scripts/deploy-all.sh
 ```
 
-## CLI Usage
+## Environment
 
-```bash
-python -m sovereign_swarm --seed --repl    # bootstrap + interactive shell
-python -m sovereign_swarm --test all       # run full test suite
-swarm-test                                  # pip-installed entrypoint
+All services read credentials from `/home/sahiix/.hermes/secrets.env`:
+
+```
+TELEGRAM_BOT_TOKEN=your_telegram_bot_token_here
+OPENAI_API_KEY=your_openai_api_key_here
 ```
 
-## REPL Commands
+## n8n Workflow Import
 
-- `spawn <name>` — spawn specialist agent
-- `hermes` — protocol messenger status
-- `oc` — OpenClaw gateway status
-- `ollama` — LLM healthcheck
-- `metrics` — swarm metrics
-- `mcp tools` — list MCP tools
-- `memory search <q>` — semantic memory search
-- `platform` — platform + model recommendation
-- `battery` / `thermal` — hardware monitoring
-- `reputation` / `economics` — agent scores + ROI
-- `backup` — create snapshot
-- `kill` — arm kill switch
-- `help` / `exit`
+Lite workflow (webhook → intent parse → condition → DSL POST → format → Telegram send):
+`/home/sahiix/n8n/lite-workflow.json`
 
-## Tests
+Import via n8n web UI: Settings → Import from file.
 
-```bash
-python -m sovereign_swarm --test all
-```
+## Files Created
 
-| Suite         | Tests | Description                        |
-|---------------|-------|------------------------------------|
-| Unit          | 11    | Bus, routing, safety, memory, LLM  |
-| Stress        | 2     | 20-msg burst, 16-agent routing     |
-| Fuzz          | 1     | 100 random safety scans            |
-| Safety        | 7     | rm -rf, mkfs, eval, emergency mode |
-| Integration   | 5     | Pipeline, HITL, persistence        |
-| Adversarial   | 7     | Prompt injection, collusion, healing |
-
-## Key Modules
-
-- **SwarmBus** — async SQLite-backed event bus
-- **MetaOrchestrator** — trust/latency/cost-weighted agent routing
-- **SafetyCouncil** — adaptive rule blocking with emergency mode
-- **HealEngine** — cascading-failure auto-heal with circuit breakers
-- **EconomicEngine** — ROI tracking + cost prediction
-- **EvolutionEngine** — agent trait evolution + speciation
-
-## License
-
-MIT © Sahil Khan
+- `/etc/systemd/system/n8n-lite.service`
+- `/etc/systemd/system/telegram-bot.service`
+- `/home/sahiix/n8n/lite-workflow.json`
+- `/home/sahiix/sovereign-swarm-v2/scripts/health-check.py`
+- `/home/sahiix/sovereign-swarm-v2/scripts/deploy-all.sh`
+- `/home/sahiix/sovereign-swarm-v2/README.md`
+- `/home/sahiix/.hermes/secrets.env` (template)

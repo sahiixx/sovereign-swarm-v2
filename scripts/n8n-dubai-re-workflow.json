@@ -1,0 +1,233 @@
+{
+  "name": "Dubai RE Agent + Telegram Bot",
+  "tags": ["dubai", "realestate", "telegram", "agent"],
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Dubai",
+    "saveExecutionProgress": true,
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "nodes": [
+    {
+      "parameters": {
+        "updates": ["message"],
+        "additionalFields": {}
+      },
+      "id": "telegram-trigger-1",
+      "name": "Telegram Trigger",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.1,
+      "position": [260, 300],
+      "webhookId": "dubai-re-telegram",
+      "credentials": {
+        "telegramApi": {
+          "id": "TELEGRAM_BOT_CREDENTIAL_ID",
+          "name": "Dubai RE Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract and sanitize user message\nconst update = $input.first().json;\nconst message = update.message || {};\nconst chat = message.chat || {};\nconst from = message.from || {};\n\nreturn [{\n  json: {\n    chatId: chat.id,\n    userId: from.id,\n    username: from.username || from.first_name || 'User',\n    text: message.text || '',\n    messageId: message.message_id,\n    timestamp: new Date(message.date * 1000).toISOString()\n  }\n}];"
+      },
+      "id": "extract-message-2",
+      "name": "Extract Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [480, 300]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "chat-model-3",
+      "name": "Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1,
+      "position": [900, 100],
+      "credentials": {
+        "openAiApi": {
+          "id": "OPENAI_CREDENTIAL_ID",
+          "name": "OpenAI Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {
+          "systemMessage": "You are a luxury real estate specialist for Dubai. You help clients find properties in Dubai including apartments, villas, penthouses, and commercial spaces in areas like Downtown Dubai, Dubai Marina, Palm Jumeirah, JBR, Business Bay, and Mohammed Bin Rashid City. You speak professionally, know market prices in AED, and can discuss off-plan vs ready properties, rental yields, and visa eligibility through property investment. Be concise but informative. Current date: {{ $now }}."
+        }
+      },
+      "id": "agent-4",
+      "name": "Dubai RE Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [700, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.example-dubai-re.com/v1/properties",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "location",
+              "value": "={{ $json.location || 'Dubai' }}"
+            },
+            {
+              "name": "type",
+              "value": "={{ $json.propertyType || 'all' }}"
+            },
+            {
+              "name": "minPrice",
+              "value": "={{ $json.minPrice || 0 }}"
+            },
+            {
+              "name": "maxPrice",
+              "value": "={{ $json.maxPrice || 100000000 }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "search-properties-5",
+      "name": "Search Properties",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [900, 500]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "window-buffer-6",
+      "name": "Window Buffer",
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chatId }}",
+        "text": "={{ $json.output }}",
+        "additionalFields": {
+          "reply_to_message_id": "={{ $json.messageId }}"
+        }
+      },
+      "id": "send-reply-7",
+      "name": "Send Reply",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.1,
+      "position": [1120, 300],
+      "credentials": {
+        "telegramApi": {
+          "id": "TELEGRAM_BOT_CREDENTIAL_ID",
+          "name": "Dubai RE Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Format final response for Telegram\nconst agentOutput = $input.first().json;\nconst context = $('Extract Message').first().json;\n\nlet replyText = agentOutput.output || agentOutput.text || agentOutput.response || 'I apologize, I could not process your request at this time.';\n\n// Append property listings if available\nconst propertyData = $('Search Properties').all()[0];\nif (propertyData && propertyData.json && Array.isArray(propertyData.json.properties) && propertyData.json.properties.length > 0) {\n  replyText += '\\n\\n🏢 *Available Properties:*\\n';\n  propertyData.json.properties.slice(0, 5).forEach((p, i) => {\n    replyText += `\\n${i+1}. ${p.title || 'Property'}\\n` +\n                 `   📍 ${p.location || 'Dubai'}\\n` +\n                 `   💰 AED ${(p.price || 0).toLocaleString()}\\n` +\n                 `   🛏 ${p.bedrooms || 'N/A'} BR | 🏠 ${p.type || 'N/A'}\\n`;\n  });\n}\n\nreturn [{\n  json: {\n    chatId: context.chatId,\n    userId: context.userId,\n    username: context.username,\n    text: context.text,\n    messageId: context.messageId,\n    output: replyText\n  }\n}];"
+      },
+      "id": "format-response-8",
+      "name": "Format Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [920, 300]
+    },
+    {
+      "parameters": {
+        "content": "## Telegram Webhook Setup Instructions\n\n### 1. Create a Telegram Bot\n- Message @BotFather on Telegram\n- Run `/newbot` and follow prompts\n- Save the bot token\n\n### 2. Configure Webhook (replace with your n8n URL):\n```\nhttps://api.telegram.org/bot<YOUR_BOT_TOKEN>/setWebhook?url=https://your-n8n-domain.com/webhook/dubai-re-telegram\n```\n\n### 3. Add credentials in n8n:\n- Go to Settings > Credentials\n- Add 'Telegram API' credential with your bot token\n- Replace TELEGRAM_BOT_CREDENTIAL_ID in this workflow\n\n### 4. OpenAI Setup (optional):\n- Add OpenAI API credential for the AI agent\n- Replace OPENAI_CREDENTIAL_ID in this workflow\n\n### 5. Property API:\n- Replace Search Properties HTTP node URL with your actual Dubai property API\n- Or remove it and use the agent with built-in knowledge only"
+      },
+      "id": "sticky-note-9",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [240, 20]
+    }
+  ],
+  "connections": {
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "Extract Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Message": {
+      "main": [
+        [
+          {
+            "node": "Dubai RE Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chat Model": {
+      "ai_model": [
+        [
+          {
+            "node": "Dubai RE Agent",
+            "type": "ai_model",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search Properties": {
+      "main": [
+        [
+          {
+            "node": "Format Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Window Buffer": {
+      "ai_memory": [
+        [
+          {
+            "node": "Dubai RE Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Dubai RE Agent": {
+      "main": [
+        [
+          {
+            "node": "Format Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Response": {
+      "main": [
+        [
+          {
+            "node": "Send Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "staticData": null
+}

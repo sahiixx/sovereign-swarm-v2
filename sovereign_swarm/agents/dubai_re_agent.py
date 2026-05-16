@@ -46,7 +46,7 @@ class DubaiREAgent:
     }
     
     AMENITIES_MAP = {
-        "pool": ["swimming pool", "lap pool", "infinity pool"],
+        "pool": ["pool", "swimming pool", "lap pool", "infinity pool"],
         "gym": ["fitness center", "gym", "health club"],
         "parking": ["covered parking", "underground parking"],
         "security": ["24/7 security", "concierge", "gated"],

@@ -40,11 +40,9 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/" or self.path == "/health":
             self._json({"ok": True, "version": "n8n-lite-v1", "workflows": len(WORKFLOWS)})
         elif self.path == "/workflows":
-            self._json({"workflows": {k: v["description"] for k, v in WORKFLOFS.items()}})
+            self._json({"workflows": {k: v["description"] for k, v in WORKFLOWS.items()}})
         elif self.path.startswith("/webhook/"):
             tag = self.path.split("/webhook/")[-1]
-            # Trigger workflow by tag
-            self._trigger_workflow(tag, {"method": "GET", "query": self.path})
             self._json({"ok": True, "triggered": tag})
         else:
             self._json({"error": "Unknown"}, 404)
