@@ -37,6 +37,7 @@ class HermesV2:
         "agency", "swarm", "fixfizx", "moltworker",
         "mcp", "a2a", "openclaw", "webhook",
         "telegram", "discord", "slack", "internal",
+        "dsl",
     ]
 
     def __init__(

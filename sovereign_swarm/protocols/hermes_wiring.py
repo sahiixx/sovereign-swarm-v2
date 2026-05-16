@@ -39,6 +39,7 @@ class HermesWiring:
         self._fixfizx_client: Optional[Any] = None
         self._moltworker_client: Optional[Any] = None
         self._agency_client: Optional[Any] = None
+        self._dsl_loop: Optional[Any] = None
 
     # ── Handlers ──────────────────────────────────────────
 
@@ -154,10 +155,26 @@ class HermesWiring:
             return {"entries": []}
         return {"channel": "internal", "received": True}
 
+    async def _dsl_handler(self, payload: Dict) -> Dict:
+        action = payload.get("action", "")
+        if action == "run":
+            goal = payload.get("goal", "")
+            requester = payload.get("requester_id", "hermes")
+            if self._dsl_loop:
+                try:
+                    result = await self._dsl_loop.run(goal, requester_id=requester)
+                    return {"channel": "dsl", "status": "complete", "ok": result.ok, "state": result.state, "checkpoint_id": result.checkpoint_id}
+                except Exception as e:
+                    return {"channel": "dsl", "status": "error", "error": str(e)}
+            return {"channel": "dsl", "status": "no_loop"}
+        if action == "status":
+            return {"channel": "dsl", "status": "ok", "loop_present": self._dsl_loop is not None}
+        return {"channel": "dsl", "received": True}
+
     # ── Wiring API ────────────────────────────────────────
 
     def wire_all(self):
-        """Wire all 12 channels with default handlers."""
+        """Wire all 13 channels with default handlers."""
         self.hermes.register("swarm", self._swarm_handler)
         self.hermes.register("agency", self._agency_handler)
         self.hermes.register("fixfizx", self._fixfizx_handler)
@@ -170,6 +187,7 @@ class HermesWiring:
         self.hermes.register("discord", self._discord_relay)
         self.hermes.register("slack", self._slack_relay)
         self.hermes.register("internal", self._internal_handler)
+        self.hermes.register("dsl", self._dsl_handler)
 
     def register_fixfizx_client(self, client):
         self._fixfizx_client = client
@@ -180,11 +198,15 @@ class HermesWiring:
     def register_agency_client(self, client):
         self._agency_client = client
 
+    def register_dsl_loop(self, loop):
+        self._dsl_loop = loop
+
     def report(self) -> Dict:
         return {
             "wired_channels": self.hermes.status()["handlers_registered"],
             "fixfizx_client": self._fixfizx_client is not None,
             "moltworker_client": self._moltworker_client is not None,
             "agency_client": self._agency_client is not None,
+            "dsl_loop": self._dsl_loop is not None,
             "hermes": self.hermes.status(),
         }

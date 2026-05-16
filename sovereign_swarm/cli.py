@@ -7,8 +7,18 @@ async def main():
     parser = argparse.ArgumentParser(description="Sovereign Swarm v2.0 — Modular Multi-Agent OS")
     parser.add_argument("--seed", action="store_true", help="Bootstrap database")
     parser.add_argument("--repl", action="store_true", help="Start REPL")
-    parser.add_argument("--test", choices=["unit", "stress", "fuzz", "safety", "integration", "adversarial", "all"], help="Run test suite")
+    parser.add_argument("--test", choices=["unit", "stress", "fuzz", "safety", "integration", "adversarial", "dsl", "all"], help="Run test suite")
+    parser.add_argument("--dsl", action="store_true", help="Run DeterministicSovereignLoop")
+    parser.add_argument("--run-mission", type=str, default=None, help="Pass a mission goal to the DSL")
     args = parser.parse_args()
+
+    if args.dsl or args.run_mission:
+        from .dsl import DeterministicSovereignLoop
+        loop = DeterministicSovereignLoop()
+        goal = args.run_mission or input("Mission goal: ")
+        result = await loop.run(goal, requester_id="cli")
+        print(json.dumps(result.to_dict(), indent=2, default=str))
+        sys.exit(0 if result.ok else 1)
 
     if args.test:
         runner = TestRunner()
@@ -18,6 +28,7 @@ async def main():
         elif args.test == "safety": await runner.run_safety()
         elif args.test == "integration": await runner.run_integration()
         elif args.test == "adversarial": await runner.run_adversarial()
+        elif args.test == "dsl": await runner.run_dsl()
         elif args.test == "all": ok = await runner.run_all(); sys.exit(0 if ok else 1)
         print(f"\nResults: {runner.passed} passed, {runner.failed} failed")
         sys.exit(0 if runner.failed == 0 else 1)

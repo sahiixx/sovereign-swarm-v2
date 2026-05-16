@@ -224,10 +224,61 @@ class TestRunner:
 
         self.check("resource_starvation", len(meta.agents) <= 16)
 
+    async def run_dsl(self):
+        print("\n[DSL TESTS]")
+        from .dsl import DeterministicSovereignLoop, Mission, Result
+        from .dsl.budget import BudgetEnforcer
+        from .dsl.checkpoint import CheckpointManager
+        from .dsl.governance import LazyConsensusGate, Approval
+        from .dsl.sandbox import CapabilitySandbox
+        from .dsl.planner import Planner, Step, PlanDAG
+        from .dsl.validator import DifferentialValidator
+
+        loop = DeterministicSovereignLoop()
+        result = await loop.run("write a fastapi auth service", requester_id="test_dsl")
+        self.check("dsl_complete", result.ok and result.state == "COMPLETE")
+        self.check("dsl_has_checkpoints", result.checkpoint_id is not None)
+        self.check("dsl_has_data", isinstance(result.data, dict) and "mission_id" in result.data)
+
+        budget = BudgetEnforcer()
+        m = Mission(goal="test", max_tokens=100, max_time_sec=10, max_cost_usd=1.0, requester_id="budget_test")
+        self.check("budget_affordable", budget.affordable(m))
+        self.check("budget_not_exhausted", not budget.exhausted(m))
+        budget.charge_tokens("budget_test", 50)
+        self.check("budget_tracked", budget.report("budget_test")["tokens_used"] == 50)
+
+        cp = CheckpointManager()
+        sid = cp.save("test_snap", {"foo": "bar"}, mission_id="m1")
+        self.check("checkpoint_save", sid is not None)
+        state = cp.restore(sid.id, "m1")
+        self.check("checkpoint_restore", state == {"foo": "bar"})
+        hist = cp.history("m1")
+        self.check("checkpoint_history", len(hist) >= 1)
+        cp.close()
+
+        gov = LazyConsensusGate()
+        req = await gov.request("test proposal", confidence=0.95, risk_score=0.05, mission_id="m1")
+        dec = await gov.poll(req.proposal_id, timeout=2)
+        self.check("governance_auto_approve", dec == Approval.GRANTED)
+
+        planner = Planner()
+        dag = await planner.create(Mission(goal="read file.txt; search docs; validate", requester_id="plan_test"))
+        self.check("dsl_plan_steps", len(dag.steps) >= 2)
+        order = dag.topological_order()
+        self.check("dsl_topo_order", len(order) == len(dag.steps))
+
+        validator = DifferentialValidator()
+        report = await validator.diff_test(dag, expected="file docs validate")
+        self.check("dsl_validator_report", hasattr(report, "passed"))
+
+        sb = CapabilitySandbox()
+        res = await sb.run("print('hello sandbox')", timeout=5)
+        self.check("sandbox_runs", res["ok"] and "hello sandbox" in res["stdout"])
+
     async def run_all(self):
         await self.run_unit(); await self.run_stress(); await self.run_fuzz()
         await self.run_safety(); await self.run_integration(); await self.run_hermes()
-        await self.run_adversarial()
+        await self.run_adversarial(); await self.run_dsl()
         print(f"\n{'='*50}")
         print(f"TOTAL: {self.passed} passed, {self.failed} failed")
         return self.failed == 0
