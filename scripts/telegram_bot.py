@@ -6,6 +6,8 @@ Sends Telegram responses via Bot API.
 """
 import os
 import sys
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+
 import json
 import time
 import logging
@@ -14,8 +16,21 @@ import urllib.request
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from socketserver import ThreadingMixIn
 
+# Import Dubai RE Agent directly (bypass dead n8n)
+from sovereign_swarm.agents.dubai_re_agent import DubaiREAgent
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger(__name__)
+
+# Global agent instance (lazy init)
+_agent: DubaiREAgent = None
+
+def get_agent() -> DubaiREAgent:
+    global _agent
+    if _agent is None:
+        _agent = DubaiREAgent()
+        log.info("DubaiREAgent loaded with %s listings", len(_agent.listings_db))
+    return _agent
 
 # Load secrets from .hermes/secrets.env if TOKEN not in environment
 if not os.getenv("TELEGRAM_BOT_TOKEN"):
@@ -30,16 +45,20 @@ if not os.getenv("TELEGRAM_BOT_TOKEN"):
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_API = f"https://api.telegram.org/bot{TOKEN}"
 N8N_WEBHOOK = "http://127.0.0.1:5678/webhook/dsl-mission"
-DSL_STATUS_URL = "http://127.0.0.1:18800/api/v1/status"
+N8N_WEBHOOK = "http://127.0.0.1:5678/webhook/dsl-mission"  # Deprecated — agent routes directly now
 PORT = int(os.getenv("TELEGRAM_BOT_PORT", "18802"))
+DSL_STATUS_URL = "http://127.0.0.1:18800/api/v1/status"  # Legacy, may be unreachable
 
 HELP_TEXT = (
-    "🏠 *Dubai RE Voice Agent*\n"
+    "🏠 *Dubai RE Voice Agent — Sahil Khan (RERA 15970)*\n"
+    "Direct property search powered by AI. No middlemen.\n\n"
     "Commands:\n"
-    "`/start` — show this help\n"
-    "`/find <query>` — search properties (routes to n8n-lite)\n"
-    "`/dsl <goal>` — send a DSL mission\n"
-    "`/status` — system health check"
+    "`/find \u003cquery\u003e` — search properties (e.g. `/find 2BR in Marina under 3M`)\n"
+    "`/start` — show this help\n\n"
+    "Example queries:\n"
+    "• `/find villa in Palm Jumeirah with pool budget 10M`\n"
+    "• `/find off-plan studio in Dubai Land`\n"
+    "• `/find 2 bedroom in Business Bay urgent`\n"
 )
 
 
@@ -124,14 +143,48 @@ def _dsl_async(goal: str, chat_id: int):
 
 
 def _find_async(query: str, chat_id: int):
-    result = route_to_n8n(f"search Dubai properties for: {query}", chat_id)
-    ok = result.get("ok")
-    if ok:
-        res = result.get("result", result)
-        msg = f"🔍 *Find Results for:* `{query[:60]}`\n```\n{json.dumps(res, indent=2)[:3800]}\n```"
-    else:
-        msg = f"❌ Find failed:\n```\n{json.dumps(result, indent=2)[:3800]}\n```"
-    send_message(chat_id, msg)
+    """Direct DubaiREAgent search — bypasses dead n8n webhook."""
+    try:
+        agent = get_agent()
+        result = agent.handle_voice_query(query)
+        
+        # Format results for Telegram
+        lines = [
+            f"🔍 *Search:* `{query[:60]}`",
+            f"📊 *Results:* {result['results_count']} properties",
+            "",
+        ]
+        
+        # Lead info
+        lead = result.get('lead', {})
+        if lead.get('qualified'):
+            lines.append(f"🎯 *Qualified Lead* — Score: {int(lead.get('confidence',0)*100)}%")
+            lines.append(f"Intent: _{lead.get('intent', '?')}_ | Urgency: _{lead.get('urgency', '?')}_")
+            lines.append("")
+        
+        # Property listings
+        for r in result.get('results', [])[:5]:
+            price_m = r['price_aed'] / 1000000
+            lines.append(
+                f"🏠 *{r['id']}* — {r['bedrooms']}BR {r['type']} in {r['location'].title()}"
+            )
+            lines.append(f"   {r['area_sqft']:,} sq ft | AED {price_m:.2f}M")
+            if r.get('project'):
+                lines.append(f"   📍 {r['project']}")
+            lines.append(f"   ✅ Ready: {'Yes' if r.get('ready') else 'No'} | {' '.join(r.get('amenities', [])[:3])}")
+            lines.append("")
+        
+        # Agent contact
+        profile = agent.agent_profile
+        lines.append(f"\n👤 {profile['name']} ({profile['rera']})")
+        lines.append(f"💬 WhatsApp: `{profile['contact']['whatsapp']}`")
+        
+        msg = "\n".join(lines)
+        send_message(chat_id, msg)
+        
+    except Exception as e:
+        log.exception("Find failed")
+        send_message(chat_id, f"❌ Search failed: `{str(e)}`")
 
 
 class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
