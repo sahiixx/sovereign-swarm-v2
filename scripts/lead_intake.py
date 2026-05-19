@@ -160,11 +160,13 @@ def build_agent_card(lead: Lead, result: dict) -> str:
     
     # Add matching properties
     for r in result.get("results", [])[:3]:
-        price_m = r["price_aed"] / 1000000
+        price_m = (r["price_aed"] or 0) / 1000000
+        sqft = r.get("area_sqft") or 0
         lines.append(f"")
-        lines.append(f"🏠 {r['id']} | {r['bedrooms']}BR {r['type']}")
-        lines.append(f"   {r['area_sqft']:,} sq ft | AED {price_m:.2f}M")
-        lines.append(f"   {r['location'].title()}")
+        lines.append(f"🏠 {r.get('id', '')} | {r.get('bedrooms', 0)}BR {r.get('type', '')}")
+        lines.append(f"   {sqft:,} sq ft | AED {price_m:.2f}M")
+        loc = (r.get("location") or "").title()
+        lines.append(f"   {loc}")
         if r.get("project"):
             lines.append(f"   📍 {r['project']}")
     

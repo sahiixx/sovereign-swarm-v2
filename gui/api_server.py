@@ -27,6 +27,7 @@ from contextlib import asynccontextmanager
 
 from sovereign_swarm.agents.dubai_re_agent import DubaiREAgent
 from sovereign_swarm.campaigns.lead_router import LeadRouter
+from sovereign_swarm.pipeline.worker import process_sync
 
 # ─── Config ──────────────────────────────────────────────────────────
 PORT = int(os.getenv("SWARM_GUI_PORT", "18805"))
@@ -598,73 +599,75 @@ async def get_leads():
 
 @app.post("/api/leads")
 async def add_lead(lead: dict):
-    l = Lead(
-        name=lead.get("name", ""),
-        phone=lead.get("phone", ""),
-        email=lead.get("email", ""),
-        budget=lead.get("budget", 0),
-        location=lead.get("location", ""),
-        bedrooms=lead.get("bedrooms", 0),
-        property_type=lead.get("property_type", ""),
-        urgency=lead.get("urgency", ""),
-        notes=lead.get("notes", ""),
-    )
-    
-    # Route via agent
-    agent = get_agent()
-    router = get_router()
-    
-    query_parts = []
-    if l.bedrooms:
-        query_parts.append(f"{l.bedrooms} bedroom")
-    if l.property_type:
-        query_parts.append(l.property_type)
-    if l.location:
-        query_parts.append(f"in {l.location}")
-    if l.budget:
-        query_parts.append(f"budget {l.budget}")
-    
-    query = " ".join(query_parts) or l.notes or "property in Dubai"
-    result = agent.handle_voice_query(query)
-    
-    # Save CRM
-    crm_data = {
-        "lead_id": l.lead_id,
-        "lead": {
-            "name": l.name,
-            "phone": l.phone,
-            "email": l.email,
-            "budget": l.budget,
-            "location": l.location,
-            "bedrooms": l.bedrooms,
-            "property_type": l.property_type,
-            "urgency": l.urgency,
-            "notes": l.notes,
-            "timestamp": l.timestamp,
-            "qualified": result["lead"]["qualified"],
+    """Replace fragile inline code with 4-layer pipeline."""
+    # Build raw_text from form fields (matches what SPA sends)
+    parts = []
+    name = lead.get("name", "")
+    if name:
+        parts.append(f"My name is {name}")
+    if lead.get("bedrooms"):
+        parts.append(f"looking for {lead.get('bedrooms')}BR")
+    if lead.get("property_type"):
+        parts.append(lead.get("property_type"))
+    if lead.get("location"):
+        parts.append(f"in {lead.get('location')}")
+    if lead.get("budget"):
+        parts.append(f"budget {lead.get('budget')}")
+    if lead.get("urgency"):
+        parts.append(f"urgency: {lead.get('urgency')}")
+    if lead.get("notes"):
+        parts.append(lead.get("notes"))
+    if lead.get("phone"):
+        parts.append(f"call me on {lead.get('phone')}")
+    if lead.get("email"):
+        parts.append(f"email: {lead.get('email')}")
+
+    raw_text = " ".join(parts)
+    if not raw_text.strip():
+        return {"ok": False, "error": "Empty lead data"}
+
+    result = process_sync(raw_text, source="web")
+    await broadcast({"type": "log", "text": f"Lead {result['lead_id']}: {result['status']}", "level": "info"})
+    return {"ok": result.get("valid", True), "lead_id": result["lead_id"], "status": result["status"], "valid": result.get("valid", True)}
+
+@app.post("/api/ingest")
+async def ingest_raw(payload: dict):
+    """Direct pipeline ingest: raw_text → 4 layers → routed/invalid."""
+    raw_text = payload.get("raw_text", "")
+    source = payload.get("source", "web")
+    source_id = payload.get("source_id", "")
+    if not raw_text or not raw_text.strip():
+        return JSONResponse({"ok": False, "error": "raw_text required"}, status_code=400)
+
+    result = process_sync(raw_text, source=source, source_id=source_id)
+    await broadcast({"type": "log", "text": f"Ingest {result['lead_id']}: {result['status']}", "level": "info"})
+    return {"ok": result.get("valid", True), **result}
+
+@app.get("/api/stats")
+async def pipeline_stats():
+    """Pipeline processing stats + system health."""
+    stats = {"processed": 0, "valid": 0, "invalid": 0, "low_conf": 0, "errors": 0}
+    dlq_count = 0
+    try:
+        from sovereign_swarm.pipeline.worker import _stats as pipeline_stats_module
+        stats = dict(pipeline_stats_module)
+    except:
+        pass
+    dlq_dir = Path("/tmp/dubai_re_dlq")
+    if dlq_dir.exists():
+        dlq_count = len(list(dlq_dir.glob("*.json")))
+    return {
+        "pipeline": {
+            "processed": stats["processed"],
+            "valid": stats["valid"],
+            "invalid": stats["invalid"],
+            "low_confidence": stats["low_conf"],
+            "errors": stats["errors"],
+            "dlq_files": dlq_count,
         },
-        "search_result": result,
-        "routed_at": datetime.now().isoformat(),
+        "crm_files": len(list(CRM_DIR.glob("*.json"))),
+        "timestamp": datetime.now().isoformat(),
     }
-    
-    crm_file = CRM_DIR / f"{l.lead_id}.json"
-    with open(crm_file, "w") as f:
-        json.dump(crm_data, f, indent=2, default=str)
-    
-    # Telegram notify
-    if l.phone:
-        wa_msg = f"Hi {l.name}, this is {AGENT_NAME} from FAM Real Estate. I saw your interest in {l.location or 'Dubai properties'}. I'd love to help!"
-        wa_link = f"https://wa.me/{l.phone.replace('+','').replace(' ','')}?text={urllib.parse.quote(wa_msg[:300])}"
-        card = f"🔥 *NEW LEAD*\n\n👤 *{l.name}*\n📞 `{l.phone}`\n💰 Budget: AED {l.budget:,}\n🏠 {l.bedrooms}BR {l.property_type} in {l.location}\n📝 {l.notes}\n\n💬 [WhatsApp]({wa_link})"
-        router._tg_api("sendMessage", {
-            "chat_id": router.chat_id,
-            "text": card,
-            "parse_mode": "Markdown",
-            "disable_web_page_preview": True,
-        })
-    
-    await broadcast({"type": "log", "text": f"Lead created: {l.lead_id}", "level": "info"})
-    return {"ok": True, "lead_id": l.lead_id, "qualified": result["lead"]["qualified"], "results_count": result["results_count"]}
 
 @app.post("/api/search")
 async def search_properties(params: dict):
