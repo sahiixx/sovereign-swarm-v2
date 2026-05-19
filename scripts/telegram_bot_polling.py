@@ -89,6 +89,105 @@ HELP_TEXT = (
     "• `/find 2 bedroom in Business Bay urgent`"
 )
 
+def handle_voice(voice: dict, chat_id: int, message_id: int):
+    """Download voice message, transcribe via Groq Whisper, route to /find."""
+    tg_post("sendChatAction", {"chat_id": chat_id, "action": "typing"})
+    
+    file_id = voice.get("file_id", "")
+    if not file_id:
+        tg_post("sendMessage", {"chat_id": chat_id, "text": "❌ Voice file missing. Try text instead."})
+        return
+    
+    try:
+        # Step 1: Get file path from Telegram
+        file_info = tg_post("getFile", {"file_id": file_id})
+        if not file_info.get("ok"):
+            tg_post("sendMessage", {"chat_id": chat_id, "text": "❌ Failed to get voice file."})
+            return
+        
+        file_path = file_info["result"].get("file_path", "")
+        if not file_path:
+            tg_post("sendMessage", {"chat_id": chat_id, "text": "❌ Voice path missing."})
+            return
+        
+        # Step 2: Download OGG voice file
+        download_url = f"https://api.telegram.org/file/bot{TOKEN}/{file_path}"
+        ogg_path = f"/tmp/voice_{chat_id}_{message_id}.ogg"
+        
+        req = urllib.request.Request(download_url)
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            with open(ogg_path, "wb") as f:
+                f.write(resp.read())
+        
+        # Step 3: Convert OGG → WAV (ffmpeg or opusdec)
+        wav_path = ogg_path.replace(".ogg", ".wav")
+        import subprocess
+        try:
+            subprocess.run(
+                ["ffmpeg", "-i", ogg_path, "-ar", "16000", "-ac", "1", "-y", wav_path],
+                capture_output=True, timeout=15, check=True
+            )
+        except (FileNotFoundError, subprocess.CalledProcessError):
+            # Fallback: try opusdec
+            try:
+                subprocess.run(
+                    ["opusdec", ogg_path, wav_path],
+                    capture_output=True, timeout=15, check=True
+                )
+            except (FileNotFoundError, subprocess.CalledProcessError):
+                tg_post("sendMessage", {"chat_id": chat_id, "text": "❌ Audio converter not installed. Run: `sudo apt install ffmpeg`"})
+                return
+        
+        # Step 4: Transcribe via Groq Whisper
+        router = get_router()
+        import httpx
+        groq_key = router._load_env("GROQ_API_KEY")
+        if not groq_key:
+            tg_post("sendMessage", {"chat_id": chat_id, "text": "❌ Groq key missing. Can't transcribe voice."})
+            return
+        
+        async def transcribe():
+            async with httpx.AsyncClient(timeout=30) as client:
+                with open(wav_path, "rb") as f:
+                    files = {"file": ("audio.wav", f, "audio/wav")}
+                    data = {"model": "whisper-large-v3", "response_format": "json"}
+                    headers = {"Authorization": f"Bearer {groq_key}"}
+                    resp = await client.post(
+                        "https://api.groq.com/openai/v1/audio/transcriptions",
+                        headers=headers, data=data, files=files
+                    )
+                    resp.raise_for_status()
+                    return resp.json().get("text", "").strip()
+        
+        # Run async transcription
+        transcript = asyncio.run(transcribe())
+        
+        # Cleanup temp files
+        for p in [ogg_path, wav_path]:
+            try:
+                os.remove(p)
+            except Exception:
+                pass
+        
+        if not transcript:
+            tg_post("sendMessage", {"chat_id": chat_id, "text": "❌ Couldn't understand. Please speak clearly or use text."})
+            return
+        
+        # Step 5: Route transcript as /find query
+        tg_post("sendMessage", {
+            "chat_id": chat_id,
+            "text": f"🎤 *Heard:* `{transcript}`",
+            "parse_mode": "Markdown"
+        })
+        
+        # Execute search with transcribed text
+        handle_message(f"/find {transcript}", chat_id, message_id)
+        
+    except Exception as e:
+        log.exception("Voice handling failed")
+        tg_post("sendMessage", {"chat_id": chat_id, "text": f"❌ Voice processing failed: `{str(e)[:200]}`"})
+
+
 def handle_message(text: str, chat_id: int, message_id: int):
     text = text.strip()
     if not text.startswith("/"):
@@ -200,6 +299,13 @@ def poll_loop():
                 if text and chat_id:
                     log.info("Message from @%s in chat %s: %s", username, chat_id, text[:60])
                     handle_message(text, chat_id, msg_id)
+                elif voice := msg.get("voice"):
+                    if chat_id:
+                        log.info("Voice message from @%s in chat %s", username, chat_id)
+                        handle_voice(voice, chat_id, msg_id)
+                else:
+                    # Non-command text — ignore
+                    pass
 
             if not updates:
                 time.sleep(POLL_INTERVAL)
