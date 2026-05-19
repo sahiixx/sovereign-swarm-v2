@@ -20,17 +20,19 @@ class VoiceIO:
     """Lightweight voice I/O layer for swarm agents."""
 
     def __init__(self, tts_provider: str = "local", stt_provider: str = "local",
-                 openai_key: str = None, model_dir: str = None):
+                 openai_key: str = None, groq_key: str = None, model_dir: str = None):
         """
         Args:
             tts_provider: "local" (pyttsx3), "openai" (cloud TTS), or "gemini" (Google TTS)
-            stt_provider: "local" (faster-whisper), "openai" (cloud Whisper)
+            stt_provider: "local" (faster-whisper), "openai" (cloud Whisper), "groq" (Groq Whisper)
             openai_key: fallback if env var unset
+            groq_key: Groq API key for fast STT
             model_dir: whisper model cache directory
         """
         self.tts_provider = tts_provider
         self.stt_provider = stt_provider
         self.openai_key = openai_key or os.getenv("OPENAI_API_KEY") or os.getenv("VOICE_TOOLS_OPENAI_KEY")
+        self.groq_key = groq_key or os.getenv("GROQ_API_KEY")
         self.model_dir = model_dir or str(Path.home() / ".cache" / "whisper")
         self._whisper_model = None  # lazy init
 
@@ -38,14 +40,18 @@ class VoiceIO:
     # TTS
     # ------------------------------------------------------------------ #
 
-    async def speak(self, text: str, voice: str = "nova", speed: float = 1.0) -> str:
+    async def speak(self, text: str, voice: str = "nova", speed: float = 1.0, provider: Optional[str] = None) -> str:
         """Speak text aloud or save to file. Returns path to audio file."""
-        if self.tts_provider == "local":
+        tts = provider or self.tts_provider
+        if tts == "local":
             return await self._speak_local(text)
-        elif self.tts_provider == "openai":
+        elif tts == "openai":
             return await self._speak_openai(text, voice, speed)
+        elif tts == "groq":
+            # Groq does not have TTS yet, fallback to local
+            return await self._speak_local(text)
         else:
-            raise ValueError(f"Unknown TTS provider: {self.tts_provider}")
+            raise ValueError(f"Unknown TTS provider: {tts}")
 
     async def _speak_local(self, text: str) -> str:
         """Use pyttsx3 for offline TTS."""
@@ -89,14 +95,17 @@ class VoiceIO:
     # STT
     # ------------------------------------------------------------------ #
 
-    async def listen(self, timeout: int = 5, mic_device: str = None) -> Optional[str]:
+    async def listen(self, timeout: int = 5, mic_device: str = None, provider: Optional[str] = None) -> Optional[str]:
         """Record audio from mic and transcribe to text."""
-        if self.stt_provider == "local":
+        prov = provider or self.stt_provider
+        if prov == "local":
             return await self._listen_local(timeout)
-        elif self.stt_provider == "openai":
+        elif prov == "openai":
             return await self._listen_openai(timeout)
+        elif prov == "groq":
+            return await self._listen_groq(timeout)
         else:
-            raise ValueError(f"Unknown STT provider: {self.stt_provider}")
+            raise ValueError(f"Unknown STT provider: {prov}")
 
     async def _listen_local(self, timeout: int) -> Optional[str]:
         """Record via arecord/SoX + transcribe via faster-whisper."""
@@ -155,6 +164,28 @@ class VoiceIO:
                 resp = await client.post(url, headers=headers, data=data, files=files)
             resp.raise_for_status()
             return resp.json().get("text")
+
+    async def _listen_groq(self, timeout: int) -> Optional[str]:
+        """Record then upload to Groq Whisper API (lightning fast)."""
+        import httpx
+        fd, wav_path = tempfile.mkstemp(suffix=".wav", prefix="swarm_stt_")
+        os.close(fd)
+        rec = await asyncio.create_subprocess_exec(
+            "arecord", "-d", str(timeout), "-f", "cd", "-t", "wav", wav_path,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        await rec.wait()
+
+        url = "https://api.groq.com/openai/v1/audio/transcriptions"
+        headers = {"Authorization": f"Bearer {self.groq_key}"}
+        async with httpx.AsyncClient(timeout=30) as client:
+            with open(wav_path, "rb") as f:
+                files = {"file": ("audio.wav", f, "audio/wav")}
+                data = {"model": "whisper-large-v3", "response_format": "json"}
+                resp = await client.post(url, headers=headers, data=data, files=files)
+            resp.raise_for_status()
+            return resp.json().get("text", "").strip()
 
     # ------------------------------------------------------------------ #
     # Helpers

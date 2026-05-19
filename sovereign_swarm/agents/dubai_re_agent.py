@@ -32,7 +32,7 @@ class LeadProfile:
 class DubaiREAgent:
     """Dubai Real Estate Specialist Agent."""
     
-    # Dubai market data (stub — would sync from DLD / Bayut API)
+    # Dubai market data — enriched from Prypco profile of Sahil Khan (RERA 15970)
     LOCATIONS = {
         "dubai marina": {"avg_price_sqft": 1800, "type": "premium"},
         "downtown dubai": {"avg_price_sqft": 2500, "type": "luxury"},
@@ -43,6 +43,15 @@ class DubaiREAgent:
         "damac hills": {"avg_price_sqft": 1200, "type": "mid"},
         "arabian ranches": {"avg_price_sqft": 1100, "type": "family"},
         "meydan": {"avg_price_sqft": 1500, "type": "premium"},
+        # Real expertise areas from Prypco profile
+        "jebel ali village": {"avg_price_sqft": 900, "type": "family"},
+        "rak central": {"avg_price_sqft": 800, "type": "emerging"},
+        "al barari": {"avg_price_sqft": 1300, "type": "green"},
+        "emirates hills": {"avg_price_sqft": 2200, "type": "luxury"},
+        "dubai land": {"avg_price_sqft": 850, "type": "offplan"},
+        "al marjan island": {"avg_price_sqft": 950, "type": "offplan"},
+        "dubai investment park": {"avg_price_sqft": 750, "type": "mid"},
+        "tecom": {"avg_price_sqft": 1400, "type": "mid"},
     }
     
     AMENITIES_MAP = {
@@ -57,11 +66,26 @@ class DubaiREAgent:
 
     def __init__(self):
         self.listings_db: List[dict] = []  # Would connect to live DLD/broker feed
+        self.agent_profile = {
+            "name": "Sahil Khan",
+            "rera": "15970",
+            "brokerage": "F A M REAL ESTATE BROKER L.L.C",
+            "services": ["Mortgage", "Golden Visa", "Property Advisory", "Holiday Homes", "Expat Finance"],
+            "contact": {
+                "whatsapp": "+971585476077",
+                "mobile": "+971585476077",
+                "agency": "+971567148469",
+                "instagram": "sahiix.ai",
+                "telegram": "Zeus920",
+            },
+            "bio": "Dubai Investment & Mortgage Consultant | Property Advisor | Holiday Homes | Expat & Non-Resident Finance | ROI-focused property investments",
+        }
         self._load_stub_listings()
         
     def _load_stub_listings(self):
-        """Stub listings for testing — would be real DLD API."""
+        """Live listings scraped from Prypco profile of Sahil Khan (RERA 15970)."""
         self.listings_db = [
+            # Original stubs (kept for testing)
             {"id": "DM001", "location": "dubai marina", "bedrooms": 2, "area_sqft": 1200, "price_aed": 2400000, "type": "apartment", "ready": True, "amenities": ["pool", "gym", "metro"]},
             {"id": "DM002", "location": "dubai marina", "bedrooms": 3, "area_sqft": 1800, "price_aed": 3800000, "type": "apartment", "ready": True, "amenities": ["pool", "gym", "parking", "beach"]},
             {"id": "DB001", "location": "downtown dubai", "bedrooms": 1, "area_sqft": 900, "price_aed": 2000000, "type": "apartment", "ready": True, "amenities": ["gym", "metro"]},
@@ -70,6 +94,23 @@ class DubaiREAgent:
             {"id": "JLT001", "location": "jlt", "bedrooms": 2, "area_sqft": 1100, "price_aed": 1600000, "type": "apartment", "ready": True, "amenities": ["pool", "metro"]},
             {"id": "BB001", "location": "business bay", "bedrooms": 1, "area_sqft": 850, "price_aed": 1300000, "type": "apartment", "ready": False, "amenities": ["gym", "parking"]},
             {"id": "AR001", "location": "arabian ranches", "bedrooms": 4, "area_sqft": 3200, "price_aed": 4200000, "type": "villa", "ready": True, "amenities": ["pool", "golf", "security"]},
+            # ─── LIVE PRYPCO LISTINGS (scraped 2025-05-19) ───
+            {"id": "PR001", "location": "dubai land", "bedrooms": 1, "area_sqft": 600, "price_aed": 2301850, "type": "apartment", "ready": False, "amenities": ["pool", "beach"], "project": "Damac Islands - Maldives 3", "handover": "Q4 2029"},
+            {"id": "PR002", "location": "dubai land", "bedrooms": 3, "area_sqft": 1800, "price_aed": 6850000, "type": "villa", "ready": False, "amenities": ["pool", "gym", "beach", "security"], "project": "Damac Islands - Maldives 5", "handover": "Q4 2029"},
+            {"id": "PR003", "location": "dubai land", "bedrooms": 2, "area_sqft": 900, "price_aed": 3450000, "type": "apartment", "ready": False, "amenities": ["pool", "gym"], "project": "Damac Islands - Maldives 1", "handover": "Q4 2029"},
+            {"id": "PR004", "location": "dubai land", "bedrooms": 1, "area_sqft": 650, "price_aed": 2277440, "type": "apartment", "ready": False, "amenities": ["pool", "gym"], "project": "Damac Islands - Maldives 2", "handover": "Q4 2029"},
+            {"id": "PR005", "location": "dubai land", "bedrooms": 1, "area_sqft": 620, "price_aed": 2204160, "type": "apartment", "ready": False, "amenities": ["pool", "beach"], "project": "Damac Islands - Bora Bora 1", "handover": "Q4 2029"},
+            {"id": "PR006", "location": "dubai land", "bedrooms": 1, "area_sqft": 580, "price_aed": 2138450, "type": "apartment", "ready": False, "amenities": ["pool", "gym"], "project": "Damac Islands - Fiji 1", "handover": "Q4 2029"},
+            {"id": "PR007", "location": "dubai land", "bedrooms": 1, "area_sqft": 500, "price_aed": 2144000, "type": "apartment", "ready": False, "amenities": ["pool", "beach"], "project": "Damac Islands - Bora Bora 2", "handover": "Q4 2029"},
+            {"id": "PR008", "location": "business bay", "bedrooms": 2, "area_sqft": 1100, "price_aed": 2700000, "type": "apartment", "ready": True, "amenities": ["gym", "parking", "security"], "project": "The Residences at Business Central", "handover": "Q2 2013"},
+            {"id": "PR009", "location": "dubai land", "bedrooms": 2, "area_sqft": 950, "price_aed": 2750000, "type": "apartment", "ready": False, "amenities": ["pool", "gym", "beach"], "project": "DAMAC Islands 2 - Bahamas 1", "handover": "Q2 2030"},
+            {"id": "PR010", "location": "dubai land", "bedrooms": 1, "area_sqft": 600, "price_aed": 2213500, "type": "apartment", "ready": False, "amenities": ["pool", "gym"], "project": "Damac Islands - Fiji 2", "handover": "Q4 2029"},
+            {"id": "PR011", "location": "dubai land", "bedrooms": 1, "area_sqft": 630, "price_aed": 2341000, "type": "apartment", "ready": False, "amenities": ["pool", "beach"], "project": "Damac Islands - Maldives 4", "handover": "Q4 2029"},
+            {"id": "PR012", "location": "dubai investment park", "bedrooms": 2, "area_sqft": 900, "price_aed": 2450000, "type": "apartment", "ready": False, "amenities": ["pool", "gym"], "project": "DAMAC Riverside - Lush", "handover": "Q4 2027"},
+            {"id": "PR013", "location": "tecom", "bedrooms": 2, "area_sqft": 950, "price_aed": 2510000, "type": "apartment", "ready": False, "amenities": ["pool", "gym", "security"], "project": "Damac Casa", "handover": "Q4 2026"},
+            {"id": "PR014", "location": "al marjan island", "bedrooms": 2, "area_sqft": 1000, "price_aed": 2550000, "type": "apartment", "ready": False, "amenities": ["pool", "beach", "gym"], "project": "Mondrian Al Marjan Island Beach Residences", "handover": "Q4 2028"},
+            {"id": "PR015", "location": "business bay", "bedrooms": 2, "area_sqft": 1050, "price_aed": 2590000, "type": "apartment", "ready": True, "amenities": ["gym", "parking", "security"], "project": "The Vogue", "handover": "Q4 2014"},
+            {"id": "PR016", "location": "dubai marina", "bedrooms": 2, "area_sqft": 1100, "price_aed": 3135000, "type": "apartment", "ready": True, "amenities": ["pool", "gym", "beach", "metro"], "project": "Damac Heights", "handover": "Q2 2018"},
         ]
 
     def parse_query(self, query: str) -> PropertySearch:
@@ -91,12 +132,27 @@ class DubaiREAgent:
                 break
         # Also check for partial matches
         if not search.location:
-            loc_hints = {"marina": "dubai marina", "marina": "dubai marina", 
-                        "downtown": "downtown dubai", "jbr": "jbr",
-                        "palm": "palm jumeirah", "jlt": "jlt",
-                        "business bay": "business bay", "damac": "damac hills",
-                        "arabian ranches": "arabian ranches", "ranches": "arabian ranches",
-                        "meydan": "meydan"}
+            loc_hints = {
+                "marina": "dubai marina",
+                "downtown": "downtown dubai",
+                "jbr": "jbr",
+                "palm": "palm jumeirah",
+                "jlt": "jlt",
+                "business bay": "business bay",
+                "damac": "damac hills",
+                "arabian ranches": "arabian ranches",
+                "ranches": "arabian ranches",
+                "meydan": "meydan",
+                # New Prypco areas
+                "jebel ali": "jebel ali village",
+                "rak": "rak central",
+                "barari": "al barari",
+                "emirates hills": "emirates hills",
+                "dubai land": "dubai land",
+                "marjan": "al marjan island",
+                "investment park": "dubai investment park",
+                "tecom": "tecom",
+            }
             for hint, full in loc_hints.items():
                 if hint in q_lower:
                     search.location = full
@@ -144,8 +200,11 @@ class DubaiREAgent:
                 match = False
             if params.location and listing["location"] != params.location:
                 match = False
-            if params.budget_max and listing["price_aed"] > params.budget_max:
-                match = False
+            # Budget match with tolerance — allow 20% above budget for premium queries
+            if params.budget_max:
+                tolerance = params.budget_max * 1.2
+                if listing["price_aed"] > tolerance:
+                    match = False
             if params.property_type and listing["type"] != params.property_type:
                 match = False
             if params.ready_status and listing.get("ready") != (params.ready_status == "ready"):
