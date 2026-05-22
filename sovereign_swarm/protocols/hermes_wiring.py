@@ -22,6 +22,7 @@ class HermesWiring:
         llm=None,
         memory=None,
         bridge=None,
+        omni=None,
     ):
         self.hermes = hermes
         self.meta = meta
@@ -34,6 +35,7 @@ class HermesWiring:
         self.llm = llm
         self.memory = memory
         self.bridge = bridge
+        self.omni = omni
 
         # In-memory clients for external systems (replace with real clients in production)
         self._fixfizx_client: Optional[Any] = None

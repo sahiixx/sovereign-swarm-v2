@@ -1,0 +1,306 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "OMNI Integration Artifact Schema v2026.S",
+  "description": "Standardized JSON schemas for all integration-layer artifacts. Consumed by SLOW_REASONING and VERIFYING phases.",
+  "definitions": {
+    "StaticMapArtifact": {
+      "type": "object",
+      "required": ["source", "binary_path", "timestamp"],
+      "properties": {
+        "source": {
+          "type": "string",
+          "enum": ["ghidra_mcp", "strings_objdump", "pefile_fallback"],
+          "description": "Which analysis tier produced this artifact. Determines confidence weight in SLOW_REASONING."
+        },
+        "binary_path": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "functions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "offset"],
+            "properties": {
+              "name": { "type": "string", "description": "Demangled or raw function name" },
+              "offset": { "type": "string", "pattern": "^0x[0-9a-fA-F]+$", "description": "Virtual address or file offset as hex string" },
+              "size": { "type": "integer", "minimum": 0 },
+              "decompiled": { "type": ["string", "null"], "description": "C pseudocode from Ghidra decompiler, if available" }
+            }
+          }
+        },
+        "crypto_functions": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Function names or strings matching crypto keywords (Crypt*, AES*, BCrypt*, etc.)"
+        },
+        "network_functions": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Function names or strings matching network keywords (WS2_32, WinInet, socket, etc.)"
+        },
+        "strings": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Top 500 printable strings extracted from binary"
+        },
+        "imports": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "DLL/SO names and imported symbols"
+        },
+        "sections": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string" },
+              "rva": { "type": "string", "pattern": "^0x[0-9a-fA-F]+$" },
+              "size": { "type": "integer", "minimum": 0 },
+              "entropy": { "type": "number", "minimum": 0, "maximum": 8 }
+            }
+          }
+        },
+        "errors": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Non-fatal errors from fallback tiers. If non-empty and source != ghidra_mcp, SLOW_REASONING should downgrade confidence."
+        }
+      }
+    },
+    "DynamicTruthArtifact": {
+      "type": "object",
+      "required": ["process_name", "platform", "timestamp"],
+      "properties": {
+        "process_name": { "type": "string" },
+        "pid": { "type": ["integer", "null"] },
+        "platform": {
+          "type": "string",
+          "enum": ["windows", "android", "linux", "darwin"]
+        },
+        "session_type": {
+          "type": "string",
+          "enum": ["local", "usb", "remote"],
+          "description": "How Frida attached to the device"
+        },
+        "modules": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "base_address"],
+            "properties": {
+              "name": { "type": "string" },
+              "base_address": { "type": "string" },
+              "size": { "type": "integer" },
+              "path": { "type": "string" },
+              "exports": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "name": { "type": "string" },
+                    "address": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "hooks_deployed": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["function", "status"],
+            "properties": {
+              "function": { "type": "string" },
+              "address": { "type": "string" },
+              "status": { "type": "string", "enum": ["deployed", "failed", "pending"] },
+              "error": { "type": "string" }
+            }
+          }
+        },
+        "intercepts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "type": { "type": "string", "enum": ["hook_hit", "hook_leave", "hook_missing", "send"] },
+              "function": { "type": "string" },
+              "args": { "type": ["integer", "array", "null"] },
+              "retval": { "type": ["string", "null"] },
+              "payload": { "type": "object" }
+            }
+          },
+          "description": "Captured Frida Interceptor messages. Max 100 per ACTING round."
+        },
+        "errors": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "timestamp": { "type": "string", "format": "date-time" }
+      }
+    },
+    "CRMSkillRecord": {
+      "type": "object",
+      "required": ["id", "name", "fingerprint", "language", "source", "created_at"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^skill_[a-f0-9]{16}$" },
+        "name": { "type": "string" },
+        "fingerprint": { "type": "string", "description": "SHA256 prefix of first 4KB of target binary" },
+        "language": { "type": "string", "enum": ["python", "javascript", "c", "cpp", "rust", "other"] },
+        "code": { "type": "string", "description": "Full source of synthesized plugin or hook script" },
+        "tests": { "type": "string", "description": "Test cases or validation script" },
+        "success_rate": { "type": "number", "minimum": 0, "maximum": 1 },
+        "source": {
+          "type": "string",
+          "enum": ["omni_re_pipeline", "manual", "other"],
+          "description": "How this skill entered the CRM"
+        },
+        "created_at": { "type": "string", "format": "date-time" }
+      }
+    },
+    "CRMLeadRecord": {
+      "type": "object",
+      "required": ["id", "name", "bank", "rate", "status"],
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "bank": { "type": "string" },
+        "rate": { "type": "number" },
+        "status": { "type": "string" },
+        "created_at": { "type": "string", "format": "date-time" }
+      }
+    },
+    "BusMessageActuatorCommand": {
+      "type": "object",
+      "required": ["cmd", "req_id"],
+      "properties": {
+        "topic": { "type": "string", "const": "actuator.commands" },
+        "payload": {
+          "type": "object",
+          "required": ["cmd", "req_id"],
+          "properties": {
+            "cmd": {
+              "type": "string",
+              "enum": ["deploy_observer", "deploy_hooks", "teardown"]
+            },
+            "target": { "type": "string", "description": "Process name or PID" },
+            "binary": { "type": "string", "description": "Path to binary (for observer context)" },
+            "functions": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Target functions for hook deployment (ACTING phase)"
+            },
+            "req_id": { "type": "string" }
+          }
+        }
+      }
+    },
+    "BusMessageSchedulerTask": {
+      "type": "object",
+      "required": ["type", "req_id"],
+      "properties": {
+        "topic": { "type": "string", "const": "scheduler.tasks" },
+        "payload": {
+          "type": "object",
+          "required": ["system", "type", "req_id"],
+          "properties": {
+            "system": { "type": "integer", "enum": [1, 2], "description": "1 = S1 (fast), 2 = S2 (slow)" },
+            "type": {
+              "type": "string",
+              "enum": [
+                "plugin_static_map",
+                "plugin_string_sleuth",
+                "plugin_entropy_scan",
+                "strategic_analysis",
+                "red_team_check",
+                "correction_plan",
+                "dual_node_verify"
+              ]
+            },
+            "target": { "type": "string" },
+            "priority": { "type": "string", "enum": ["critical", "high", "normal", "low"] },
+            "req_id": { "type": "string" },
+            "artifacts": { "type": "object", "description": "Reference to current ctx.artifacts" },
+            "history": { "type": "array" }
+          }
+        }
+      }
+    },
+    "BusMessageCRMSync": {
+      "type": "object",
+      "required": ["action"],
+      "properties": {
+        "topic": { "type": "string", "const": "crm.sync" },
+        "payload": {
+          "type": "object",
+          "required": ["action"],
+          "properties": {
+            "action": {
+              "type": "string",
+              "enum": ["sync", "status", "write_skill", "read_leads"]
+            },
+            "skill": { "$ref": "#/definitions/CRMSkillRecord" }
+          }
+        }
+      }
+    },
+    "BusMessageStateEvent": {
+      "type": "object",
+      "required": ["event"],
+      "properties": {
+        "topic": { "type": "string", "const": "state.events" },
+        "payload": {
+          "type": "object",
+          "required": ["event"],
+          "properties": {
+            "event": {
+              "type": "string",
+              "enum": [
+                "BINARY_LOADED", "TERROIR_COMPLETE", "OBSERVER_READY",
+                "NEW_FUNCTION_DETECTED", "STATIC_MAP_COMPLETE",
+                "DYNAMIC_TRUTH_CAPTURED", "SYMBOLIC_SOLUTION_FOUND",
+                "ACTUATOR_DEPLOYED", "ENVIRONMENTAL_CONFIRMATION",
+                "ENVIRONMENTAL_TIMEOUT", "VERIFICATION_PASSED",
+                "VERIFICATION_FAILED", "STRATEGIC_PIVOT",
+                "CAPABILITY_GAP", "EVOLUTION_SUCCESS", "EVOLUTION_FAIL",
+                "HUMAN_APPROVAL", "HUMAN_REJECTION", "TIMEOUT", "ERROR",
+                "MANUAL_OVERRIDE"
+              ]
+            },
+            "data": { "type": "object" }
+          }
+        }
+      }
+    }
+  },
+  "properties": {
+    "static_map": { "$ref": "#/definitions/StaticMapArtifact" },
+    "dynamic_truth": { "$ref": "#/definitions/DynamicTruthArtifact" },
+    "crm_skill": { "$ref": "#/definitions/CRMSkillRecord" },
+    "crm_lead": { "$ref": "#/definitions/CRMLeadRecord" },
+    "bus_messages": {
+      "type": "object",
+      "properties": {
+        "actuator_command": { "$ref": "#/definitions/BusMessageActuatorCommand" },
+        "scheduler_task": { "$ref": "#/definitions/BusMessageSchedulerTask" },
+        "crm_sync": { "$ref": "#/definitions/BusMessageCRMSync" },
+        "state_event": { "$ref": "#/definitions/BusMessageStateEvent" }
+      }
+    }
+  },
+  "error_codes": {
+    "type": "object",
+    "description": "Standard error strings published in artifact.errors[] or bus result status fields",
+    "properties": {
+      "E_GHIDRA_TIMEOUT": { "description": "Ghidra MCP did not respond within SLA" },
+      "E_GHIDRA_UNAVAILABLE": { "description": "Ghidra MCP health check failed; fallback activated" },
+      "E_FRIDA_NOT_INSTALLED": { "description": "frida Python module missing" },
+      "E_FRIDA_ATTACH_FAILED": { "description": "Could not attach to target process" },
+      "E_FRIDA_HOOK_MISSING": { "description": "Target function not found in any module" },
+      "E_CRM_OFFLINE": { "description": "CRM DB unreachable; operating in offline mode" },
+      "E_CRM_SCHEMA_MISMATCH": { "description": "CRM DB exists but missing expected tables" },
+      "E_BINARY_NOT_FOUND": { "description": "Target binary path does not exist" },
+      "E_OBJDUMP_MISSING": { "description": "objdump/dumpbin not in PATH" },
+      "E_PEFILE_MISSING": { "description": "pefile not installed; PE fallback unavailable" }
+    }
+  }
+}
