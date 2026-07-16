@@ -1,0 +1,182 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sahiixx.os/schemas/lead.json",
+  "title": "Lead",
+  "description": "Unified lead object for Dubai real-estate revenue OS",
+  "type": "object",
+  "required": ["id", "status", "source", "timestamp", "contact"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "UUID or short unique id",
+      "examples": ["ld_20260716_a1b2c3"]
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "new/unqualified",
+        "needs_review",
+        "qualified",
+        "nurture",
+        "dropped",
+        "matched",
+        "scheduled",
+        "viewing_done",
+        "closed_won",
+        "closed_lost"
+      ]
+    },
+    "source": {
+      "type": "object",
+      "required": ["channel", "type"],
+      "properties": {
+        "channel": {
+          "type": "string",
+          "enum": ["whatsapp", "telegram", "webform", "portal", "email", "sms", "script", "voice", "other"]
+        },
+        "type": {
+          "type": "string",
+          "description": "e.g. campaign_id, portal_name, form_id"
+        },
+        "campaign": { "type": ["string", "null"] },
+        "raw_ref": {
+          "type": "string",
+          "description": "pointer to original payload (s3, redis key, file)"
+        }
+      }
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "contact": {
+      "type": "object",
+      "properties": {
+        "name": { "type": ["string", "null"] },
+        "alias": { "type": ["string", "null"] },
+        "phone": { "type": ["string", "null"] },
+        "whatsapp": { "type": ["string", "null"] },
+        "telegram": { "type": ["string", "null"] },
+        "email": { "type": ["string", "null"] },
+        "handles": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        }
+      }
+    },
+    "message": {
+      "type": "string",
+      "description": "raw free-text or listing description"
+    },
+    "qualification": {
+      "type": "object",
+      "properties": {
+        "score": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "intent": {
+          "type": "string",
+          "enum": ["buy", "sell", "rent", "invest", "info_only", "unknown"]
+        },
+        "budget_band": {
+          "type": "object",
+          "properties": {
+            "min_aed": { "type": ["number", "null"] },
+            "max_aed": { "type": ["number", "null"] },
+            "currency": { "type": "string", "default": "AED" }
+          }
+        },
+        "timeline": {
+          "type": "string",
+          "enum": ["urgent", "soon", "exploratory", "unknown"]
+        },
+        "segment": {
+          "type": "string",
+          "enum": ["end_user", "investor", "local", "international", "unknown"]
+        },
+        "decision": {
+          "type": "string",
+          "enum": ["Qualified – pipeline entry", "Nurture – follow-up later", "Drop – clearly unfit or spam"]
+        },
+        "rationale": {
+          "type": "array",
+          "items": { "type": "string" },
+          "maxItems": 3
+        },
+        "confidence": {
+          "type": "string",
+          "enum": ["high", "medium", "low"]
+        },
+        "tags": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "matches": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "type": { "type": "string", "enum": ["area", "community", "property", "typology"] },
+          "id": { "type": ["string", "null"] },
+          "name": { "type": "string" },
+          "reason": { "type": "string" },
+          "score": { "type": "number", "minimum": 0, "maximum": 1 },
+          "speculative": { "type": "boolean", "default": false }
+        }
+      }
+    },
+    "scheduling": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["proposed", "tentative", "confirmed", "attempted", "cancelled"]
+        },
+        "slots": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "start": { "type": "string", "format": "date-time" },
+              "end": { "type": "string", "format": "date-time" },
+              "channel": {
+                "type": "string",
+                "enum": ["in_person", "video", "phone"]
+              },
+              "broker_id": { "type": ["string", "null"] }
+            }
+          }
+        },
+        "message_template": { "type": "string" },
+        "confirmed_slot": { "type": ["object", "null"] }
+      }
+    },
+    "meta": {
+      "type": "object",
+      "properties": {
+        "created_at": { "type": "string", "format": "date-time" },
+        "updated_at": { "type": "string", "format": "date-time" },
+        "agent_trace": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "agent": { "type": "string" },
+              "ts": { "type": "string", "format": "date-time" },
+              "action": { "type": "string" },
+              "tier": { "type": "integer", "enum": [0, 1, 2] }
+            }
+          }
+        },
+        "provenance": {
+          "type": "object",
+          "properties": {
+            "source_confidence": { "type": "number" },
+            "last_human_override": { "type": ["string", "null"] }
+          }
+        }
+      }
+    }
+  },
+  "additionalProperties": false
+}
