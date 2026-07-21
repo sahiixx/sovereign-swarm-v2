@@ -55,7 +55,9 @@ class SwarmREPL:
         self.qwen3 = Qwen3Router()
 
     async def seed(self):
-        await self.bus.init(); await self.memory.init(); await self.hermes.start(); self.hermes_wiring.wire_all()
+        await asyncio.gather(self.bus.init(), self.memory.init())
+        await self.hermes.start()
+        self.hermes_wiring.wire_all()
         for s in SpecialistFactory.SPECIALTIES:
             self.meta.register(AgentProfile(f"{s}_0", [s], trust=0.7))
         print("[seed] Bus + Memory + Meta + HermesV2 initialized. 10 specialist profiles registered.")
@@ -171,9 +173,10 @@ class SwarmREPL:
         print("\n🕸️  Sovereign Swarm v2.0 REPL — Modular Multi-Agent OS")
         print("   Type 'help' for commands, 'exit' to quit.\n")
         try:
+            loop = asyncio.get_running_loop()
             while self.running:
                 try:
-                    line = input("swarm> ").strip()
+                    line = (await loop.run_in_executor(None, lambda: input("swarm> "))).strip()
                     if not line: continue
                     parts = line.split(); cmd = parts[0].lower(); args = parts[1:]
                     if cmd in ("exit", "quit"): break

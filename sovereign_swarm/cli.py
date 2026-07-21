@@ -1,4 +1,4 @@
-from .config import *
+from .config import DATA_DIR
 from .repl import SwarmREPL
 from .tests import TestRunner
 
@@ -17,8 +17,9 @@ async def main():
     if args.daemon:
         from .dsl.daemon import DSLDaemon
         daemon = DSLDaemon()
+        loop = asyncio.get_running_loop()
         def handle_sig(signum, frame):
-            asyncio.create_task(daemon.stop())
+            loop.call_soon_threadsafe(lambda: asyncio.ensure_future(daemon.stop()))
         signal.signal(signal.SIGINT, handle_sig)
         signal.signal(signal.SIGTERM, handle_sig)
         await daemon.start()
@@ -51,9 +52,10 @@ async def main():
         sys.exit(0 if runner.failed == 0 else 1)
 
     swarm = SwarmREPL()
+    loop = asyncio.get_running_loop()
     def handle_sig(sig, frame):
         print("\n[signal] Shutdown requested")
-        asyncio.get_event_loop().call_soon(asyncio.create_task, swarm.shutdown())
+        loop.call_soon_threadsafe(lambda: asyncio.ensure_future(swarm.shutdown()))
     signal.signal(signal.SIGINT, handle_sig)
 
     if args.seed: await swarm.seed()
