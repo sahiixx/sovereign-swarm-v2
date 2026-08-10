@@ -1,94 +1,136 @@
-# Sovereign Swarm v2 — Dubai RE Deployment Guide
+# sovereign-swarm-v2
 
-## Architecture
+![Python](https://img.shields.io/badge/python-3.11+-blue) ![Docker](https://img.shields.io/badge/docker-ready-blue) ![Agentic](https://img.shields.io/badge/agentic-harness-purple)
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                        User Telegram                             │
-└──────────────────────┬────────────────────────────────────────┘
-                       │ POST / (webhook)
-                       ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                  Telegram Bot  (port 18802)                      │
-│   /start, /find, /dsl, /status                                   │
-│   routes /dsl → n8n-lite → DSL daemon                          │
-└┬─────────────────────┬───────────────────────────────────────────┘
- │                     │
- │ /find or /dsl       │ health
- │                     ▼
- ▼           ┌─────────────────────┐
-POST         │   n8n-lite          │  (port 5678)
-/webhook/    │   webhook engine    │
-dsl-mission  │   /webhook/dsl-mission
-             │   /webhook/telegram │
-             └────────┬────────────┘
-                      │ POST
-                      ▼
-            ┌─────────────────────┐
-            │   DSL Daemon          │  (port 18800)
-            │   Deterministic       │
-            │   Sovereign Loop      │
-            │   /api/v1/mission     │
-            │   /api/v1/status      │
-            └─────────────────────┘
+
+## Table of Contents
+
+- [Overview](#overview)
+- [Quick Start](#quick-start)
+- [Agentic Architecture](#agentic-architecture)
+- [Model Routing](#model-routing)
+- [Project Layout](#project-layout)
+- [Development](#development)
+- [Related Repositories](#related-repositories)
+
+## Overview
+
 ```
 
-## Ports
+| | |
+|---|---|
+| **Stack** | python |
+| **Frameworks** | docker, pydantic |
+| **Tests** | yes |
+| **Commits** | 2 |
+| **Last activity** | 2026-08-10 |
+| **Visibility** | public |
 
-| Service        | Port  | Endpoints                         |
-|----------------|-------|-----------------------------------|
-| DSL Daemon     | 18800 | /api/v1/mission, /api/v1/status |
-| n8n-lite       | 5678  | /webhook/dsl-mission, /webhook/telegram, /health, /workflows |
-| Telegram Bot   | 18802 | / (webhook), /health, /status     |
+## Quick Start
 
-## Systemd Services
-
-- `n8n-lite.service`        → runs `scripts/n8n-lite.py` on port 5678, auto-restart
-- `telegram-bot.service`    → runs `scripts/telegram_bot.py` on port 18802, after n8n-lite
-- DSL daemon is started by deploy script (`python -m sovereign_swarm.dsl.daemon`)
-
-## Commands
+### Install
 
 ```bash
-# Start all services
-sudo systemctl start n8n-lite telegram-bot
-
-# Enable on boot
-sudo systemctl enable n8n-lite telegram-bot
-
-# Check logs
-sudo journalctl -u n8n-lite -f
-sudo journalctl -u telegram-bot -f
-
-# Health check
-python3 scripts/health-check.py
-
-# Full deploy (git pull, pip install, restart, health check)
-./scripts/deploy-all.sh
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt   # or: pip install -e .
 ```
 
-## Environment
+### Run
 
-All services read credentials from `/home/sahiix/.hermes/secrets.env`:
-
-```
-TELEGRAM_BOT_TOKEN=your_telegram_bot_token_here
-OPENAI_API_KEY=your_openai_api_key_here
+```bash
+# Entry point not auto-detected; inspect the layout below.
 ```
 
-## n8n Workflow Import
+## Agentic Architecture
 
-Lite workflow (webhook → intent parse → condition → DSL POST → format → Telegram send):
-`/home/sahiix/n8n/lite-workflow.json`
+This repository participates in the [sahiixx agentic harness](https://github.com/sahiixx/agentic-harness) — a shared
+contract for how agents plan, act, verify, and recover across all repos in this account.
 
-Import via n8n web UI: Settings → Import from file.
+**Signal strength:** agentic density score `398` (references to agent,
+tool-call, LLM, RAG and orchestration primitives across the source tree).
 
-## Files Created
+### Patterns in play
 
-- `/etc/systemd/system/n8n-lite.service`
-- `/etc/systemd/system/telegram-bot.service`
-- `/home/sahiix/n8n/lite-workflow.json`
-- `/home/sahiix/sovereign-swarm-v2/scripts/health-check.py`
-- `/home/sahiix/sovereign-swarm-v2/scripts/deploy-all.sh`
-- `/home/sahiix/sovereign-swarm-v2/README.md`
-- `/home/sahiix/.hermes/secrets.env` (template)
+| Pattern | Role here |
+|---|---|
+| **Prompt Chaining** | Deterministic multi-step pipelines where subtasks are known upfront |
+| **Routing** | Classify input, dispatch to the specialist path (cheap model for easy work) |
+| **Parallelization** | Independent subtasks fan out; results aggregated programmatically |
+| **Orchestrator–Workers** | Central planner decomposes dynamically when subtasks can't be predicted |
+| **Evaluator–Optimizer** | Generator/judge split with explicit rubric; bounded retry |
+| **ReAct** | Interleaved reason → act → observe for adaptive tool use |
+| **Reflection** | Self-critique before emitting a final answer |
+
+> Escalation rule: start with the simplest pattern that solves the problem. Add
+> Reflection only when verification fails, Planning only when dependencies emerge,
+> Multi-Agent only when work exceeds a single role or context window.
+
+### Reliability envelope
+
+- **Bounded execution** — every loop has a max-iteration and wall-clock ceiling.
+- **Tool sandboxing** — filesystem/network side effects are isolated and reversible.
+- **Guardrail layering** — validate at input, mid-loop, and output.
+- **Context engineering** — select, compress, isolate; never let raw history grow unbounded.
+- **Self-verification** — check intermediate output against constraints before continuing.
+
+## Model Routing
+
+Agent work in this repo routes through Azure AI Foundry. See [`AGENTS.md`](./AGENTS.md)
+for the full contract.
+
+| Purpose | Deployment | Endpoint |
+|---|---|---|
+| Default / general | `gpt-5.6-sol` | `/openai/v1/chat/completions` |
+| Deep reasoning | `claude-opus-5` | `/openai/v1/responses` **only** |
+| Embeddings | `text-embedding-3-small` | `/openai/v1/embeddings` |
+
+```bash
+export AZURE_FOUNDRY_API_KEY=...        # never commit this
+export AZURE_FOUNDRY_BASE_URL=https://<resource>.openai.azure.com/openai/v1
+```
+
+> **Gotcha:** Claude deployments on Azure return `404 api_not_supported` on
+> `/chat/completions`. They answer **only** via the Responses API.
+
+## Project Layout
+
+```
+AGENTS.md
+CHANGELOG.md
+Dockerfile
+LICENSE
+README.md
+api/
+docker-compose.yml
+gui/
+mobile/
+prompts/
+pyproject.toml
+scripts/
+sovereign_swarm/
+tests/
+```
+
+## Development
+
+```bash
+# lint / format before committing
+ruff check . && ruff format .
+
+# run the CI check locally
+gh workflow run hermes-azure-check.yml
+```
+
+Secrets live in environment variables and CI secrets — never in tracked files.
+
+## Related Repositories
+
+Part of a 84-repository workspace sharing one agentic contract:
+
+- **[agentic-harness](https://github.com/sahiixx/agentic-harness)** — patterns, contracts, and reference implementations
+- `AGENTS.md` in every repo pins identical model routing
+
+---
+
+<sub>README maintained by the agentic harness · last regenerated 2026-08-10</sub>
